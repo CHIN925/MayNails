@@ -5,7 +5,7 @@ const IS_ADMIN = new URLSearchParams(window.location.search).get("admin") === "t
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 9);
-const fmt = (n) => RM ${Number(n).toFixed(2)};
+const fmt = (n) => `RM ${Number(n).toFixed(2)}`;
 
 async function loadKey(key) {
   try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : null; } catch { return null; }
@@ -44,7 +44,8 @@ const DEFAULT_SETTINGS = {
   ],
 };
 
-// ─── editable tefunction ET({ value, onChange, className = "", multi = false }) {
+// ─── editable text ───────────────────────────────────────────────────────────
+function ET({ value, onChange, className = "", multi = false }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const commit = () => { onChange(draft); setEditing(false); };
@@ -115,8 +116,8 @@ function CheckoutModal({ cart, total, shipping, settings, onClose, onOrderPlaced
               <div className="osi" style={{ borderTop: "1px dashed #f0d0d0", marginTop: 6, paddingTop: 8 }}>
                 <span>Shipping</span><span>{shipping === 0 ? "Free" : fmt(shipping)}</span>
               </div>
-              <div className="osi" style={{ fontWeight: 700, fontSize: 16, color: "#b86060" }}>xt ───────────────────────────────────────────────────────────
-<span>Total</span><span>{fmt(grand)}</span>
+              <div className="osi" style={{ fontWeight: 700, fontSize: 16, color: "#b86060" }}>
+                <span>Total</span><span>{fmt(grand)}</span>
               </div>
             </div>
             <div className="form-grid">
@@ -131,7 +132,7 @@ function CheckoutModal({ cart, total, shipping, settings, onClose, onOrderPlaced
                 <textarea className="form-input" style={{ resize: "vertical", minHeight: 60 }} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Any special requests?" />
               </div>
             </div>
-            <button className="btn-primary" style={{ width: "100%", marginTop: 16 }} disabled={!form.name⠺⠵⠟⠺⠞⠟⠞⠞⠞⠟⠞⠞⠵⠵⠟!form.address}
+            <button className="btn-primary" style={{ width: "100%", marginTop: 16 }} disabled={!form.name || !form.phone || !form.address}
               onClick={() => setStep(2)}>Continue to Payment →</button>
           </div>
         )}
@@ -309,8 +310,7 @@ export default function MayNails() {
         .hero-cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
 
         /* BUTTONS */
-        .
-        btn-primary{background:#b86060;color:#fff;border:none;border-radius:30px;padding:12px 28px;font-size:14px;cursor:pointer;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 18px #b8606040;font-family:inherit;letter-spacing:.3px}
+        .btn-primary{background:#b86060;color:#fff;border:none;border-radius:30px;padding:12px 28px;font-size:14px;cursor:pointer;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 18px #b8606040;font-family:inherit;letter-spacing:.3px}
         .btn-primary:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 28px #b8606055}
         .btn-primary:disabled{opacity:.5;cursor:not-allowed}
         .btn-outline{background:transparent;color:#b86060;border:1.5px solid #b86060;border-radius:30px;padding:11px 24px;font-size:14px;cursor:pointer;transition:all .15s;font-family:inherit;letter-spacing:.3px}
@@ -354,8 +354,7 @@ export default function MayNails() {
         .add-btn:hover{transform:scale(1.15)}
         .del-btn{position:absolute;top:10px;left:10px;background:#ff6060cc;color:#fff;border:none;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3}
         .add-item-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:#fceaea;border:1.5px dashed #b86060;color:#b86060;border-radius:20px;padding:10px 20px;font-size:13px;cursor:pointer;margin-top:14px;transition:background .15s;font-family:inherit;width:100%}
-        .
-        add-item-btn:hover{background:#f8d8d8}
+        .add-item-btn:hover{background:#f8d8d8}
 
         /* IMAGE SLOT */
         .img-slot{width:100%;height:100%;position:relative;border-radius:inherit;overflow:hidden}
@@ -404,8 +403,7 @@ export default function MayNails() {
         .osi{display:flex;justify-content:space-between;font-size:13px;color:#5a3535}
         .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
         .form-field{display:flex;flex-direction:column;gap:4px}
-        .
-        form-field label{font-size:11px;color:#b08080;letter-spacing:.5px;text-transform:uppercase}
+        .form-field label{font-size:11px;color:#b08080;letter-spacing:.5px;text-transform:uppercase}
         .form-input{border:1.5px solid #f0d0d0;border-radius:10px;padding:9px 12px;font-size:13px;font-family:inherit;outline:none;background:#fff}
         .form-input:focus{border-color:#b86060}
         .pay-tab{flex:1;padding:10px;border-radius:12px;border:1.5px solid #f0d0d0;background:#fff;cursor:pointer;font-family:inherit;font-size:13px;color:#5a3535;transition:all .15s}
@@ -446,8 +444,7 @@ export default function MayNails() {
         /* ORDERS */
         .orders-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:10px}
         .order-cards{display:flex;flex-direction:column;gap:14px}
-        .
-        order-card{background:#fff;border-radius:18px;padding:20px;border:1px solid #fae0e0;position:relative}
+        .order-card{background:#fff;border-radius:18px;padding:20px;border:1px solid #fae0e0;position:relative}
         .order-top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px}
         .order-id{font-size:12px;color:#b08080;font-family:monospace}
         .order-date{font-size:11px;color:#c09090}
@@ -636,7 +633,7 @@ export default function MayNails() {
 
           {/* Payment settings (edit mode only) */}
           {editMode && (
-          <div className="pay-settings">
+            <div className="pay-settings">
               <div className="pay-set-title">💳 Payment Details (visible to customers at checkout)</div>
               <div className="pay-fields">
                 {[["Bank name","payment.bank_name"],["Account number","payment.bank_acc"],["Account holder","payment.bank_holder"],["TNG number","payment.tng_number"]].map(([lbl, key]) => (
@@ -699,8 +696,7 @@ export default function MayNails() {
               <div key={f.id} className="faq-item">
                 {editMode && <button style={{ position: "absolute", top: 12, right: 12, background: "#ff6060cc", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                   onClick={() => { const next = JSON.parse(JSON.stringify(settings)); next.faq.splice(i, 1); saveSettings(next); }}>✕</button>}
-                <div className="faq-q">{editMode ? <ET value={f.q} onChange={v => { const next = JSON.parse(JSON.stringify(settings)); next.faq[i].
-                q = v; saveSettings(next); }} /> : f.q}</div>
+                <div className="faq-q">{editMode ? <ET value={f.q} onChange={v => { const next = JSON.parse(JSON.stringify(settings)); next.faq[i].q = v; saveSettings(next); }} /> : f.q}</div>
                 <div className="faq-a">{editMode ? <ET value={f.a} onChange={v => { const next = JSON.parse(JSON.stringify(settings)); next.faq[i].a = v; saveSettings(next); }} multi /> : f.a}</div>
               </div>
             ))}
@@ -773,7 +769,7 @@ export default function MayNails() {
             <div>
               <h2 className="sec-title" style={{ textAlign: "left", marginBottom: 4 }}>📋 Orders</h2>
               <p style={{ fontSize: 13, color: "#a07070" }}>{orders.length} order{orders.length !== 1 ? "s" : ""} total</p>
-              </div>
+            </div>
             {orders.length > 0 && (
               <button className="btn-outline" style={{ fontSize: 12 }} onClick={() => { if (confirm("Clear all orders?")) saveOrders([]); }}>Clear all</button>
             )}
@@ -788,7 +784,7 @@ export default function MayNails() {
                         <div className="order-id">#{o.id.toUpperCase()}</div>
                         <div className="order-date">{new Date(o.date).toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" })}</div>
                       </div>
-                      <span className="status-badge" style={{ background: (statusColor[o.status]⠺⠵⠺⠵⠟⠞⠵⠵⠵⠺⠞⠞⠞⠺⠞⠵⠟⠞⠞⠵⠵⠞⠞⠺⠺⠞⠵⠟⠵⠟⠞⠵⠺⠺⠵⠞⠟⠺⠟⠟⠵⠞⠵⠺⠞⠵⠞⠞"#888" }}>{o.status}</span>
+                      <span className="status-badge" style={{ background: (statusColor[o.status] || "#888") + "22", color: statusColor[o.status] || "#888" }}>{o.status}</span>
                     </div>
                     <div className="order-cust">{o.customer.name}</div>
                     <div className="order-phone">📞 {o.customer.phone}</div>
@@ -822,4 +818,3 @@ export default function MayNails() {
     </div>
   );
 }
-
