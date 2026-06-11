@@ -3,16 +3,37 @@ import { useState, useEffect, useRef } from "react";
 // Only show admin/edit features if URL has ?admin=true
 const IS_ADMIN = new URLSearchParams(window.location.search).get("admin") === "true";
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-const uid = () => Math.random().toString(36).slice(2, 9);
-const fmt = (n) => `RM ${Number(n).toFixed(2)}`;
+// ─── Supabase config ─────────────────────────────────────────────────────────
+const SUPA_URL = "https://yzzcrgjkvcuzdlpzescy.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6emNyZ2prdmN1emRscHplc2N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNzkxMDIsImV4cCI6MjA5Njc1NTEwMn0.7iE8e7fwXJd5bOYFsJnDkNVtdvzg6Ri9SUhjJmAFimE";
 
-async function loadKey(key) {
-  try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : null; } catch { return null; }
+async function dbLoad(key) {
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/store_data?key=eq.${key}&select=value`, {
+      headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` }
+    });
+    const rows = await res.json();
+    if (rows && rows[0] && rows[0].value && rows[0].value !== "null") return rows[0].value;
+    return null;
+  } catch { return null; }
 }
-async function saveKey(key, val) {
-  try { await window.storage.set(key, JSON.stringify(val)); } catch {}
+
+async function dbSave(key, val) {
+  try {
+    await fetch(`${SUPA_URL}/rest/v1/store_data?key=eq.${key}`, {
+      method: "PATCH",
+      headers: {
+        apikey: SUPA_KEY,
+        Authorization: `Bearer ${SUPA_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal"
+      },
+      body: JSON.stringify({ value: val })
+    });
+  } catch {}
 }
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
 // ─── default data ────────────────────────────────────────────────────────────
 const DEFAULT_PRODUCTS = [
@@ -218,8 +239,8 @@ export default function MayNails() {
   useEffect(() => {
     (async () => {
       const [p, g, s, o] = await Promise.all([
-        loadKey("mn_products"), loadKey("mn_gallery"),
-        loadKey("mn_settings"), loadKey("mn_orders"),
+        dbLoad("products"), dbLoad("gallery"),
+        dbLoad("settings"), dbLoad("orders"),
       ]);
       if (p) setProducts(p);
       if (g) setGallery(g);
@@ -229,10 +250,10 @@ export default function MayNails() {
     })();
   }, []);
 
-  const saveProducts = v => { setProducts(v); saveKey("mn_products", v); };
-  const saveGallery  = v => { setGallery(v);  saveKey("mn_gallery", v); };
-  const saveSettings = v => { setSettings(v); saveKey("mn_settings", v); };
-  const saveOrders   = v => { setOrders(v);   saveKey("mn_orders", v); };
+  const saveProducts = v => { setProducts(v); dbSave("products", v); };
+  const saveGallery  = v => { setGallery(v);  dbSave("gallery", v); };
+  const saveSettings = v => { setSettings(v); dbSave("settings", v); };
+  const saveOrders   = v => { setOrders(v);   dbSave("orders", v); };
 
   const showToast = msg => { setToast(msg); setTimeout(() => setToast(""), 2400); };
 
