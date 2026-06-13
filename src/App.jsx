@@ -1,21 +1,48 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
-// ─── Admin access ─────────────────────────────────────────────────────────────
-const URL_PARAMS = new URLSearchParams(window.location.search);
-const ADMIN_PASSWORD = "maynails2025"; // change this to your own password
-const IS_ADMIN_URL = URL_PARAMS.get("admin") === "true";
+// ─── Admin: password prompt only once on ?admin=true load ────────────────────
+const IS_ADMIN_URL = new URLSearchParams(window.location.search).get("admin") === "true";
+const ADMIN_PASSWORD = "maynails2025";
 
-// ─── Supabase config ─────────────────────────────────────────────────────────
+// ─── Google Sheets config ────────────────────────────────────────────────────
+// Replace SHEET_ID with your Google Sheet ID after setup
+const SHEET_ID = "YOUR_SHEET_ID_HERE";
+const SHEET_NAME = "Orders";
+async function appendToSheet(order) {
+  if (SHEET_ID === "YOUR_SHEET_ID_HERE") return;
+  try {
+    const row = [
+      new Date(order.date).toLocaleString("en-MY"),
+      order.id.toUpperCase(),
+      order.customer.name,
+      order.customer.phone,
+      order.customer.address,
+      order.customer.size,
+      order.items.map(i => `${i.name} x${i.qty}`).join(", "),
+      `RM ${order.subtotal.toFixed(2)}`,
+      `RM ${order.shipping.toFixed(2)}`,
+      `RM ${order.grand.toFixed(2)}`,
+      order.payMethod === "bank" ? "Bank Transfer" : "TNG eWallet",
+      order.status,
+      order.customer.note || "",
+    ];
+    await fetch(`https://script.google.com/macros/s/${SHEET_ID}/exec`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ row, sheet: SHEET_NAME }),
+      mode: "no-cors",
+    });
+  } catch {}
+}
+
+// ─── Supabase ────────────────────────────────────────────────────────────────
 const SUPA_URL = "https://yzzcrgjkvcuzdlpzescy.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6emNyZ2prdmN1emRscHplc2N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNzkxMDIsImV4cCI6MjA5Njc1NTEwMn0.7iE8e7fwXJd5bOYFsJnDkNVtdvzg6Ri9SUhjJmAFimE";
-
 async function dbLoad(key) {
   try {
-    const res = await fetch(`${SUPA_URL}/rest/v1/store_data?key=eq.${key}&select=value`, {
-      headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` }
-    });
+    const res = await fetch(`${SUPA_URL}/rest/v1/store_data?key=eq.${key}&select=value`, { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } });
     const rows = await res.json();
-    if (rows && rows[0] && rows[0].value && rows[0].value !== "null") return rows[0].value;
+    if (rows?.[0]?.value && rows[0].value !== "null") return rows[0].value;
     return null;
   } catch { return null; }
 }
@@ -29,11 +56,10 @@ async function dbSave(key, val) {
   } catch {}
 }
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 9);
 const fmt = (n) => `RM ${Number(n).toFixed(2)}`;
 
-// ─── default data ─────────────────────────────────────────────────────────────
+// ─── Default data ─────────────────────────────────────────────────────────────
 const DEFAULT_PRODUCTS = [
   { id: "p1", name: "Creamy Moonlight", desc: "Soft milky white with a pearl shimmer — the ultimate everyday set.", price: 28, tag: "Best Seller", sizes: "XS · S · M · L · XL", images: [] },
   { id: "p2", name: "Rose Velvet", desc: "Dusty rose matte finish, velvety texture with a romantic feel.", price: 32, tag: "New", sizes: "XS · S · M · L · XL", images: [] },
@@ -61,97 +87,90 @@ const DEFAULT_SETTINGS = {
     { id: "f3", q: "How long do they last?", a: "With adhesive tabs: 3–5 days. With nail glue: up to 2 weeks. We recommend removing before sleeping to extend wear." },
     { id: "f4", q: "Can I exchange for a different size?", a: "Yes! Unused sets can be exchanged within 7 days. Just message us first to arrange." },
   ],
-  guide: {
-    title: "How to Measure & Size Guide",
-    desc: "",
-    images: [],
-  },
+  guide: { title: "How to Measure & Size Guide", desc: "", images: [] },
 };
 
-// ─── editable text ────────────────────────────────────────────────────────────
-function ET({ value, onChange, className = "", multi = false, placeholder = "" }) {
+// ─── Editable text ────────────────────────────────────────────────────────────
+function ET({ value, onChange, multi = false, placeholder = "" }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const commit = () => { onChange(draft); setEditing(false); };
   if (editing) return multi
-    ? <textarea autoFocus className={`ei eta ${className}`} value={draft} placeholder={placeholder} onChange={e => setDraft(e.target.value)} onBlur={commit} onKeyDown={e => e.key === "Escape" && (setDraft(value), setEditing(false))} />
-    : <input autoFocus className={`ei ${className}`} value={draft} placeholder={placeholder} onChange={e => setDraft(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value); setEditing(false); } }} />;
-  return <span className={`ed ${className}`} onClick={() => { setDraft(value); setEditing(true); }} title="Click to edit">{value || <span style={{ opacity: 0.4, fontStyle: "italic" }}>{placeholder || "Click to edit"}</span>}<span className="eico">✏️</span></span>;
+    ? <textarea autoFocus className="ei eta" value={draft} placeholder={placeholder} onChange={e => setDraft(e.target.value)} onBlur={commit} onKeyDown={e => e.key === "Escape" && (setDraft(value), setEditing(false))} />
+    : <input autoFocus className="ei" value={draft} placeholder={placeholder} onChange={e => setDraft(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value); setEditing(false); } }} />;
+  return <span className="ed" onClick={() => { setDraft(value); setEditing(true); }} title="Click to edit">{value || <em style={{ opacity: 0.4 }}>{placeholder || "Click to edit"}</em>}<span className="eico">✏️</span></span>;
 }
 
-// ─── multi-image upload slot ──────────────────────────────────────────────────
-function MultiImgUpload({ images = [], onAdd, onRemove, editMode }) {
+// ─── Single image slot ────────────────────────────────────────────────────────
+function ImgSlot({ src, onUpload, onRemove, style = {}, editMode, label = "", onClick }) {
   const ref = useRef();
-  const onChange = e => {
-    const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => onAdd(ev.target.result);
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  };
+  const handleClick = () => { if (editMode) { ref.current.click(); } else if (onClick) onClick(); };
+  const onChange = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpload(ev.target.result); r.readAsDataURL(f); e.target.value = ""; };
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      {images.map((src, i) => (
-        <div key={i} style={{ position: "relative", width: 72, height: 72, borderRadius: 10, overflow: "hidden", border: "1px solid #fae0e0" }}>
-          <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          {editMode && <button onClick={() => onRemove(i)} style={{ position: "absolute", top: 2, right: 2, background: "rgba(255,255,255,.9)", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#b86060" }}>✕</button>}
-        </div>
-      ))}
-      {editMode && (
-        <div onClick={() => ref.current.click()} style={{ width: 72, height: 72, borderRadius: 10, border: "1.5px dashed #e0c0c0", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", background: "#fdf9f9", fontSize: 20 }}>
-          📷<span style={{ fontSize: 9, color: "#c09090", marginTop: 2 }}>Add</span>
-          <input ref={ref} type="file" accept="image/*" style={{ display: "none" }} onChange={onChange} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── single image slot ────────────────────────────────────────────────────────
-function ImgSlot({ src, onUpload, onRemove, style = {}, editMode, label = "" }) {
-  const ref = useRef();
-  const pick = () => { if (!editMode) return; ref.current.click(); };
-  const onChange = e => {
-    const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => onUpload(ev.target.result);
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  };
-  return (
-    <div className="img-slot" style={{ ...style, cursor: editMode ? "pointer" : "default" }} onClick={pick}>
-      {src ? <img src={src} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} />
-        : <div className="img-placeholder">{editMode ? <><span style={{ fontSize: 28 }}>📷</span><span style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>Upload photo</span></> : <span style={{ opacity: 0.3, fontSize: 22 }}>🖼️</span>}</div>}
-      {src && editMode && <button className="img-remove" onClick={e => { e.stopPropagation(); onRemove(); }}>✕</button>}
+    <div style={{ ...style, position: "relative", overflow: "hidden", cursor: editMode ? "pointer" : (onClick ? "zoom-in" : "default") }} onClick={handleClick}>
+      {src
+        ? <img src={src} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        : <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#fdf6f6", gap: 4 }}>
+            {editMode ? <><span style={{ fontSize: 28 }}>📷</span><span style={{ fontSize: 11, opacity: 0.6 }}>Upload photo</span></> : <span style={{ opacity: 0.2, fontSize: 26 }}>🖼️</span>}
+          </div>}
+      {src && editMode && <button onClick={e => { e.stopPropagation(); onRemove(); }} style={{ position: "absolute", top: 6, right: 6, background: "rgba(255,255,255,.9)", border: "none", borderRadius: "50%", width: 24, height: 24, fontSize: 12, cursor: "pointer", color: "#b86060", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
       <input ref={ref} type="file" accept="image/*" style={{ display: "none" }} onChange={onChange} />
     </div>
   );
 }
 
-// ─── image lightbox ───────────────────────────────────────────────────────────
+// ─── Lightbox ─────────────────────────────────────────────────────────────────
 function Lightbox({ images, startIdx, onClose }) {
   const [idx, setIdx] = useState(startIdx);
+  const prev = () => setIdx(i => (i - 1 + images.length) % images.length);
+  const next = () => setIdx(i => (i + 1) % images.length);
   useEffect(() => {
-    const handler = e => { if (e.key === "Escape") onClose(); if (e.key === "ArrowRight") setIdx(i => (i + 1) % images.length); if (e.key === "ArrowLeft") setIdx(i => (i - 1 + images.length) % images.length); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [images, onClose]);
+    const h = e => { if (e.key === "Escape") onClose(); if (e.key === "ArrowRight") next(); if (e.key === "ArrowLeft") prev(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [images.length]);
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.88)", zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh" }} onClick={e => e.stopPropagation()}>
-        <img src={images[idx]} alt="" style={{ maxWidth: "88vw", maxHeight: "85vh", objectFit: "contain", borderRadius: 12 }} />
-        {images.length > 1 && <>
-          <button onClick={() => setIdx(i => (i - 1 + images.length) % images.length)} style={{ position: "absolute", left: -44, top: "50%", transform: "translateY(-50%)", background: "rgba(255,255,255,.15)", border: "none", color: "#fff", fontSize: 24, width: 40, height: 40, borderRadius: "50%", cursor: "pointer" }}>‹</button>
-          <button onClick={() => setIdx(i => (i + 1) % images.length)} style={{ position: "absolute", right: -44, top: "50%", transform: "translateY(-50%)", background: "rgba(255,255,255,.15)", border: "none", color: "#fff", fontSize: 24, width: 40, height: 40, borderRadius: "50%", cursor: "pointer" }}>›</button>
-          <div style={{ textAlign: "center", color: "#fff", fontSize: 12, marginTop: 8, opacity: 0.7 }}>{idx + 1} / {images.length}</div>
-        </>}
-        <button onClick={onClose} style={{ position: "absolute", top: -36, right: 0, background: "none", border: "none", color: "#fff", fontSize: 24, cursor: "pointer" }}>✕</button>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.92)", zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ position: "relative", maxWidth: "95vw", maxHeight: "95vh", display: "flex", flexDirection: "column", alignItems: "center" }} onClick={e => e.stopPropagation()}>
+        <img src={images[idx]} alt="" style={{ maxWidth: "92vw", maxHeight: "88vh", objectFit: "contain", borderRadius: 10 }} />
+        {images.length > 1 && (
+          <>
+            <button onClick={prev} style={{ position: "absolute", left: -52, top: "50%", transform: "translateY(-50%)", background: "rgba(255,255,255,.15)", border: "none", color: "#fff", fontSize: 26, width: 44, height: 44, borderRadius: "50%", cursor: "pointer" }}>‹</button>
+            <button onClick={next} style={{ position: "absolute", right: -52, top: "50%", transform: "translateY(-50%)", background: "rgba(255,255,255,.15)", border: "none", color: "#fff", fontSize: 26, width: 44, height: 44, borderRadius: "50%", cursor: "pointer" }}>›</button>
+            <div style={{ marginTop: 10, color: "#fff", fontSize: 12, opacity: 0.6 }}>{idx + 1} / {images.length}</div>
+          </>
+        )}
+        <button onClick={onClose} style={{ position: "absolute", top: -40, right: 0, background: "none", border: "none", color: "#fff", fontSize: 26, cursor: "pointer" }}>✕</button>
       </div>
     </div>
   );
 }
 
-// ─── checkout modal ───────────────────────────────────────────────────────────
+// ─── Admin Login Modal ────────────────────────────────────────────────────────
+function AdminLogin({ onSuccess, onClose }) {
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState(false);
+  const submit = () => { if (pw === ADMIN_PASSWORD) onSuccess(); else { setErr(true); setPw(""); } };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: "#fffaf8", borderRadius: 24, width: "100%", maxWidth: 340, overflow: "hidden" }}>
+        <div style={{ padding: "20px 24px", borderBottom: "1px solid #fae0e0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ color: "#b86060", fontStyle: "italic", fontSize: 18 }}>Admin Login 🔐</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#b86060" }}>✕</button>
+        </div>
+        <div style={{ padding: "20px 24px" }}>
+          <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px", display: "block", marginBottom: 6 }}>Password</label>
+          <input type="password" value={pw} autoFocus onChange={e => { setPw(e.target.value); setErr(false); }} onKeyDown={e => e.key === "Enter" && submit()} placeholder="Enter admin password"
+            style={{ width: "100%", border: `1.5px solid ${err ? "#ef4444" : "#f0d0d0"}`, borderRadius: 10, padding: "9px 12px", fontSize: 14, fontFamily: "inherit", outline: "none", background: "#fff" }} />
+          {err && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 4 }}>Wrong password. Try again.</div>}
+          <button onClick={submit} style={{ width: "100%", marginTop: 14, background: "#b86060", color: "#fff", border: "none", borderRadius: 30, padding: "12px", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>Enter</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Checkout Modal ───────────────────────────────────────────────────────────
 function CheckoutModal({ cart, total, shipping, settings, onClose, onOrderPlaced }) {
   const [step, setStep] = useState(1);
   const [payMethod, setPayMethod] = useState("bank");
@@ -162,113 +181,144 @@ function CheckoutModal({ cart, total, shipping, settings, onClose, onOrderPlaced
   const submitOrder = () => {
     const order = { id: uid(), date: new Date().toISOString(), customer: form, items: cart, subtotal: total, shipping, grand, payMethod, proof, status: "Pending Payment" };
     onOrderPlaced(order);
+    appendToSheet(order);
     setStep(3);
   };
-  const uploadProof = e => { const file = e.target.files[0]; if (!file) return; const r = new FileReader(); r.onload = ev => setProof(ev.target.result); r.readAsDataURL(file); };
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-header">
-          <h2 style={{ color: "#b86060", fontStyle: "italic" }}>{step === 3 ? "Order Placed! 🩷" : step === 2 ? "Payment" : "Your Details"}</h2>
-          <button className="modal-close" onClick={onClose}>✕</button>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.38)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: "#fffaf8", borderRadius: 24, width: "100%", maxWidth: 520, maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: "20px 24px", borderBottom: "1px solid #fae0e0", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          <h2 style={{ color: "#b86060", fontStyle: "italic", fontSize: 18 }}>{step === 3 ? "Order Placed! 🩷" : step === 2 ? "Payment" : "Your Details"}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#b86060" }}>✕</button>
         </div>
-        {step === 1 && (
-          <div className="modal-body">
-            <div className="order-summary-mini">
-              {cart.map(i => <div key={i.id} className="osi"><span>{i.name} × {i.qty}</span><span>RM {(i.price * i.qty).toFixed(2)}</span></div>)}
-              <div className="osi" style={{ borderTop: "1px dashed #f0d0d0", marginTop: 6, paddingTop: 8 }}><span>Shipping</span><span>{shipping === 0 ? "Free" : fmt(shipping)}</span></div>
-              <div className="osi" style={{ fontWeight: 700, fontSize: 16, color: "#b86060" }}><span>Total</span><span>{fmt(grand)}</span></div>
+        <div style={{ padding: "20px 24px", overflowY: "auto" }}>
+          {step === 1 && <>
+            <div style={{ background: "#fdf6f6", borderRadius: 14, padding: 14, marginBottom: 18 }}>
+              {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5a3535", padding: "3px 0" }}><span>{i.name} × {i.qty}</span><span>RM {(i.price * i.qty).toFixed(2)}</span></div>)}
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5a3535", padding: "6px 0", borderTop: "1px dashed #f0d0d0", marginTop: 6 }}><span>Shipping</span><span>{shipping === 0 ? "Free" : fmt(shipping)}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 700, color: "#b86060" }}><span>Total</span><span>{fmt(grand)}</span></div>
             </div>
-            <div className="form-grid">
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {[["name", "Full name"], ["phone", "Phone / WhatsApp"], ["address", "Delivery address"], ["size", "Nail size (e.g. XS/S/M)"]].map(([k, lbl]) => (
-                <div key={k} className="form-field"><label>{lbl}</label><input className="form-input" value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} placeholder={lbl} /></div>
+                <div key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>{lbl}</label>
+                  <input style={{ border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff" }} value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} placeholder={lbl} />
+                </div>
               ))}
-              <div className="form-field" style={{ gridColumn: "1/-1" }}>
-                <label>Special requests (optional)</label>
-                <textarea className="form-input" style={{ resize: "vertical", minHeight: 60 }} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Any special requests?" />
+              <div style={{ gridColumn: "1/-1", display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>Special requests (optional)</label>
+                <textarea style={{ border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff", resize: "vertical", minHeight: 60 }} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Any special requests?" />
               </div>
             </div>
-            <button className="btn-primary" style={{ width: "100%", marginTop: 16 }} disabled={!form.name || !form.phone || !form.address} onClick={() => setStep(2)}>Continue to Payment →</button>
-          </div>
-        )}
-        {step === 2 && (
-          <div className="modal-body">
+            <button disabled={!form.name || !form.phone || !form.address} onClick={() => setStep(2)} style={{ width: "100%", marginTop: 16, background: "#b86060", color: "#fff", border: "none", borderRadius: 30, padding: 12, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: (!form.name || !form.phone || !form.address) ? 0.5 : 1 }}>Continue to Payment →</button>
+          </>}
+          {step === 2 && <>
             <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
               {["bank", "tng"].map(m => (
-                <button key={m} className={`pay-tab ${payMethod === m ? "active" : ""}`} onClick={() => setPayMethod(m)}>{m === "bank" ? "🏦 Bank Transfer" : "💚 TNG eWallet"}</button>
+                <button key={m} onClick={() => setPayMethod(m)} style={{ flex: 1, padding: 10, borderRadius: 12, border: `1.5px solid ${payMethod === m ? "#b86060" : "#f0d0d0"}`, background: payMethod === m ? "#fceaea" : "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: 13, color: payMethod === m ? "#b86060" : "#5a3535", fontWeight: payMethod === m ? 700 : 400 }}>{m === "bank" ? "🏦 Bank Transfer" : "💚 TNG eWallet"}</button>
               ))}
             </div>
-            {payMethod === "bank" && (
-              <div className="pay-box">
-                <div className="pay-title">Bank Transfer</div>
-                <div className="pay-row"><span>Bank</span><strong>{settings.payment.bank_name}</strong></div>
-                <div className="pay-row"><span>Account No.</span><strong>{settings.payment.bank_acc}</strong></div>
-                <div className="pay-row"><span>Account Name</span><strong>{settings.payment.bank_holder}</strong></div>
-                <div className="pay-row pay-amount"><span>Amount</span><strong style={{ color: "#b86060", fontSize: 20 }}>{fmt(grand)}</strong></div>
+            <div style={{ background: "#fdf6f6", borderRadius: 14, padding: 18, border: "1px solid #f5d0d0" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#b86060", marginBottom: 12 }}>{payMethod === "bank" ? "Bank Transfer" : "TNG eWallet"}</div>
+              {payMethod === "bank" && [["Bank", settings.payment.bank_name], ["Account No.", settings.payment.bank_acc], ["Account Name", settings.payment.bank_holder]].map(([l, v]) => (
+                <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5a3535", padding: "6px 0", borderBottom: "1px dashed #f0d0d0" }}><span>{l}</span><strong>{v}</strong></div>
+              ))}
+              {payMethod === "tng" && <>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5a3535", padding: "6px 0", borderBottom: "1px dashed #f0d0d0" }}><span>Transfer to</span><strong>{settings.payment.tng_number}</strong></div>
+                {settings.payment.tng_qr && <img src={settings.payment.tng_qr} alt="QR" style={{ width: 180, height: 180, objectFit: "contain", display: "block", margin: "14px auto 0", borderRadius: 12 }} />}
+              </>}
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 18, fontWeight: 700, color: "#b86060", marginTop: 10 }}><span>Amount</span><span>{fmt(grand)}</span></div>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px", display: "block", marginBottom: 6 }}>Upload payment screenshot (required)</label>
+              <div onClick={() => proofRef.current.click()} style={{ border: "2px dashed #e0c0c0", borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", minHeight: 100, background: "#fffaf8" }}>
+                {proof ? <img src={proof} alt="proof" style={{ width: "100%", maxHeight: 200, objectFit: "contain", borderRadius: 8 }} /> : <><span style={{ fontSize: 28 }}>📸</span><span style={{ fontSize: 13, color: "#b08080" }}>Tap to upload screenshot</span></>}
               </div>
-            )}
-            {payMethod === "tng" && (
-              <div className="pay-box">
-                <div className="pay-title">TNG eWallet</div>
-                <div className="pay-row"><span>Transfer to</span><strong>{settings.payment.tng_number}</strong></div>
-                <div className="pay-row pay-amount"><span>Amount</span><strong style={{ color: "#b86060", fontSize: 20 }}>{fmt(grand)}</strong></div>
-                {settings.payment.tng_qr && <img src={settings.payment.tng_qr} alt="TNG QR" style={{ width: 180, height: 180, objectFit: "contain", display: "block", margin: "14px auto 0", borderRadius: 12, border: "1px solid #fae0e0" }} />}
-                {!settings.payment.tng_qr && <div style={{ textAlign: "center", color: "#c09090", fontSize: 13, marginTop: 10 }}>QR code will appear once uploaded.</div>}
-              </div>
-            )}
-            <div className="form-field" style={{ marginTop: 16 }}>
-              <label>Upload payment screenshot (required)</label>
-              <div className="proof-upload" onClick={() => proofRef.current.click()}>
-                {proof ? <img src={proof} alt="proof" style={{ width: "100%", maxHeight: 200, objectFit: "contain", borderRadius: 8 }} />
-                  : <><span style={{ fontSize: 28 }}>📸</span><span style={{ fontSize: 13, color: "#b08080" }}>Tap to upload screenshot</span></>}
-              </div>
-              <input ref={proofRef} type="file" accept="image/*" style={{ display: "none" }} onChange={uploadProof} />
+              <input ref={proofRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => setProof(ev.target.result); r.readAsDataURL(f); }} />
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-              <button className="btn-outline" style={{ flex: 1 }} onClick={() => setStep(1)}>← Back</button>
-              <button className="btn-primary" style={{ flex: 2 }} disabled={!proof} onClick={submitOrder}>Confirm Order ✓</button>
+              <button onClick={() => setStep(1)} style={{ flex: 1, background: "transparent", color: "#b86060", border: "1.5px solid #b86060", borderRadius: 30, padding: 11, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
+              <button disabled={!proof} onClick={submitOrder} style={{ flex: 2, background: "#b86060", color: "#fff", border: "none", borderRadius: 30, padding: 12, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: !proof ? 0.5 : 1 }}>Confirm Order ✓</button>
+            </div>
+          </>}
+          {step === 3 && <div style={{ textAlign: "center", padding: "32px 0" }}>
+            <div style={{ fontSize: 56, marginBottom: 16 }}>🩷</div>
+            <h3 style={{ fontSize: 20, marginBottom: 10 }}>Thank you, {form.name}!</h3>
+            <p style={{ fontSize: 14, color: "#7a5858", lineHeight: 1.8, marginBottom: 20 }}>Your order is received. We'll verify your payment and confirm via Instagram shortly.</p>
+            <button onClick={onClose} style={{ background: "#b86060", color: "#fff", border: "none", borderRadius: 30, padding: "12px 28px", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>Done</button>
+          </div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Product Card (separate component to allow useState inside) ───────────────
+function ProductCard({ p, editMode, onUpdate, onDelete, onAddToCart, onLightbox }) {
+  const [activeImg, setActiveImg] = useState(0);
+  const imgs = p.images || [];
+  const fileRef = useRef();
+  const addImg = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpdate(p.id, "images", [...imgs, ev.target.result]); r.readAsDataURL(f); e.target.value = ""; };
+  return (
+    <div style={{ background: "#fff", borderRadius: 22, overflow: "hidden", boxShadow: "0 2px 20px #f0c0c018", border: "1px solid #fae8e8", position: "relative", transition: "transform .2s, box-shadow .2s" }}
+      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 10px 36px #f0c0c035"; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
+      {editMode && <button onClick={() => onDelete(p.id)} style={{ position: "absolute", top: 10, left: 10, background: "#ff6060cc", color: "#fff", border: "none", borderRadius: "50%", width: 24, height: 24, fontSize: 12, cursor: "pointer", zIndex: 3, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
+      {p.tag && <div style={{ position: "absolute", top: 12, right: 12, background: "rgba(255,255,255,.92)", color: "#b86060", fontSize: 10, padding: "3px 10px", borderRadius: 10, fontWeight: 600, zIndex: 2 }}>
+        {editMode ? <ET value={p.tag} onChange={v => onUpdate(p.id, "tag", v)} /> : p.tag}
+      </div>}
+      {/* Main image */}
+      <div style={{ width: "100%", height: 220, background: "#fdf6f6", position: "relative", overflow: "hidden" }}>
+        {imgs.length > 0
+          ? <img src={imgs[activeImg]} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "zoom-in" }} onClick={() => onLightbox(imgs, activeImg)} />
+          : <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4 }}>
+              {editMode ? <><span style={{ fontSize: 32 }}>📷</span><span style={{ fontSize: 11, opacity: 0.6 }}>Upload photo below</span></> : <span style={{ opacity: 0.2, fontSize: 28 }}>🖼️</span>}
+            </div>}
+      </div>
+      {/* Thumbnails */}
+      {imgs.length > 1 && (
+        <div style={{ display: "flex", gap: 5, padding: "6px 10px", background: "#fdf6f6", overflowX: "auto" }}>
+          {imgs.map((src, i) => (
+            <img key={i} src={src} alt="" onClick={() => setActiveImg(i)}
+              style={{ width: 44, height: 44, borderRadius: 7, objectFit: "cover", cursor: "pointer", flexShrink: 0, border: `2px solid ${i === activeImg ? "#b86060" : "transparent"}`, transition: "border-color .15s" }} />
+          ))}
+        </div>
+      )}
+      {/* Edit: upload more images */}
+      {editMode && (
+        <div style={{ padding: "8px 12px", background: "#fdf6f6", borderBottom: "1px solid #fae8e8" }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            {imgs.map((src, i) => (
+              <div key={i} style={{ position: "relative" }}>
+                <img src={src} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover" }} />
+                <button onClick={() => { const next = imgs.filter((_, j) => j !== i); onUpdate(p.id, "images", next); if (activeImg >= next.length) setActiveImg(Math.max(0, next.length - 1)); }}
+                  style={{ position: "absolute", top: -4, right: -4, background: "#fff", border: "none", borderRadius: "50%", width: 16, height: 16, fontSize: 9, cursor: "pointer", color: "#b86060", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px #0003" }}>✕</button>
+              </div>
+            ))}
+            <div onClick={() => fileRef.current.click()} style={{ width: 40, height: 40, borderRadius: 6, border: "1.5px dashed #e0c0c0", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", background: "#fff", fontSize: 18 }}>+
+              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={addImg} />
             </div>
           </div>
-        )}
-        {step === 3 && (
-          <div className="modal-body" style={{ textAlign: "center", padding: "32px 24px" }}>
-            <div style={{ fontSize: 56, marginBottom: 16 }}>🩷</div>
-            <h3 style={{ fontSize: 20, marginBottom: 10, color: "#2a1818" }}>Thank you, {form.name}!</h3>
-            <p style={{ fontSize: 14, color: "#7a5858", lineHeight: 1.8, marginBottom: 20 }}>Your order has been received. We'll verify your payment and confirm via Instagram shortly.</p>
-            <button className="btn-primary" onClick={onClose}>Done</button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── admin login modal ────────────────────────────────────────────────────────
-function AdminLogin({ onSuccess, onClose }) {
-  const [pw, setPw] = useState("");
-  const [err, setErr] = useState(false);
-  const submit = () => { if (pw === ADMIN_PASSWORD) { onSuccess(); } else { setErr(true); setPw(""); } };
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 360 }}>
-        <div className="modal-header">
-          <h2 style={{ color: "#b86060", fontStyle: "italic" }}>Admin Login 🔐</h2>
-          <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div className="modal-body">
-          <div className="form-field">
-            <label>Password</label>
-            <input className="form-input" type="password" value={pw} onChange={e => { setPw(e.target.value); setErr(false); }} onKeyDown={e => e.key === "Enter" && submit()} placeholder="Enter admin password" autoFocus />
-            {err && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 4 }}>Incorrect password. Try again.</div>}
+      )}
+      {/* Body */}
+      <div style={{ padding: "14px 18px 18px" }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#2a1818", marginBottom: 6 }}>{editMode ? <ET value={p.name} onChange={v => onUpdate(p.id, "name", v)} /> : p.name}</div>
+        <div style={{ fontSize: 12, color: "#8a6a6a", marginBottom: 10, lineHeight: 1.65 }}>{editMode ? <ET value={p.desc} onChange={v => onUpdate(p.id, "desc", v)} multi /> : p.desc}</div>
+        <div style={{ fontSize: 11, color: "#c09090", marginBottom: 14 }}>Sizes: {editMode ? <ET value={p.sizes} onChange={v => onUpdate(p.id, "sizes", v)} /> : p.sizes}</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: "#b86060" }}>
+            <span style={{ fontSize: 12 }}>RM </span>
+            {editMode ? <ET value={String(p.price)} onChange={v => onUpdate(p.id, "price", Number(v))} /> : p.price}
           </div>
-          <button className="btn-primary" style={{ width: "100%", marginTop: 16 }} onClick={submit}>Enter</button>
+          <button onClick={() => onAddToCart(p)} style={{ background: "#b86060", color: "#fff", border: "none", borderRadius: "50%", width: 36, height: 36, fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── main app ─────────────────────────────────────────────────────────────────
+// ─── Main App ─────────────────────────────────────────────────────────────────
 export default function MayNails() {
   const [products, setProducts] = useState(DEFAULT_PRODUCTS);
   const [gallery, setGallery] = useState(DEFAULT_GALLERY);
@@ -276,21 +326,24 @@ export default function MayNails() {
   const [orders, setOrders] = useState([]);
   const [loaded, setLoaded] = useState(false);
 
+  // Admin: show login once on page load if ?admin=true, then stay logged in
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showLogin, setShowLogin] = useState(IS_ADMIN_URL);
   const [editMode, setEditMode] = useState(false);
-  const [showLogin, setShowLogin] = useState(false);
+
   const [section, setSection] = useState("home");
   const [cart, setCart] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkout, setCheckout] = useState(false);
   const [toast, setToast] = useState("");
-  const [lightbox, setLightbox] = useState(null); // { images, idx }
+  const [lightbox, setLightbox] = useState(null);
 
   useEffect(() => {
     (async () => {
       const [p, g, s, o] = await Promise.all([dbLoad("products"), dbLoad("gallery"), dbLoad("settings"), dbLoad("orders")]);
-      if (p) setProducts(p.map(prod => ({ ...prod, images: prod.images || (prod.image ? [prod.image] : []) })));
+      if (p) setProducts(p.map(prod => ({ ...prod, images: prod.images || [] })));
       if (g) setGallery(g);
-      if (s) setSettings(prev => ({ ...prev, ...s, guide: s.guide || prev.guide, contact: { ...prev.contact, ...s.contact } }));
+      if (s) setSettings(prev => ({ ...prev, ...s, guide: { ...prev.guide, ...(s.guide || {}) }, contact: { ...prev.contact, ...(s.contact || {}) } }));
       if (o) setOrders(o);
       setLoaded(true);
     })();
@@ -311,25 +364,25 @@ export default function MayNails() {
     saveSettings(next);
   };
 
-  // cart
+  // Cart
   const addToCart = p => { setCart(prev => { const ex = prev.find(i => i.id === p.id); return ex ? prev.map(i => i.id === p.id ? { ...i, qty: i.qty + 1 } : i) : [...prev, { ...p, qty: 1 }]; }); showToast(`Added: ${p.name} 🛒`); };
-  const removeFromCart = id => setCart(prev => prev.filter(i => i.id !== id));
-  const adjustQty = (id, d) => setCart(prev => prev.map(i => i.id === id ? { ...i, qty: Math.max(1, i.qty + d) } : i));
+  const removeFromCart = id => setCart(p => p.filter(i => i.id !== id));
+  const adjustQty = (id, d) => setCart(p => p.map(i => i.id === id ? { ...i, qty: Math.max(1, i.qty + d) } : i));
   const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const shippingFee = cartTotal >= settings.shipping.free_threshold ? 0 : settings.shipping.standard.price;
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
-  // products
+  // Products
   const updProduct = (id, key, val) => saveProducts(products.map(p => p.id === id ? { ...p, [key]: val } : p));
-  const addProduct = () => saveProducts([...products, { id: uid(), name: "New Style", desc: "Click to edit", price: 30, tag: "", sizes: "XS · S · M · L · XL", images: [] }]);
+  const addProduct = () => saveProducts([...products, { id: uid(), name: "New Style", desc: "Click to edit description", price: 30, tag: "", sizes: "XS · S · M · L · XL", images: [] }]);
   const delProduct = id => saveProducts(products.filter(p => p.id !== id));
 
-  // gallery
+  // Gallery
   const updGallery = (id, key, val) => saveGallery(gallery.map(g => g.id === id ? { ...g, [key]: val } : g));
   const addGalleryItem = () => saveGallery([...gallery, { id: uid(), image: null, label: "New photo", bg: "#fce4ec" }]);
   const delGalleryItem = id => saveGallery(gallery.filter(g => g.id !== id));
 
-  // orders
+  // Orders
   const placeOrder = order => { const next = [order, ...orders]; saveOrders(next); setCart([]); };
   const updateOrderStatus = (id, status) => saveOrders(orders.map(o => o.id === id ? { ...o, status } : o));
   const deleteOrder = id => saveOrders(orders.filter(o => o.id !== id));
@@ -340,8 +393,10 @@ export default function MayNails() {
     { key: "home", label: "Home" }, { key: "shop", label: "Shop" },
     { key: "gallery", label: "Gallery" }, { key: "guide", label: "Size Guide" },
     { key: "faq", label: "FAQ" }, { key: "contact", label: "Contact" },
-    ...(editMode ? [{ key: "orders", label: "📋 Orders" }] : []),
+    ...(isAdmin && editMode ? [{ key: "orders", label: "📋 Orders" }] : []),
   ];
+
+  const P = ({ children }) => <span style={{ fontFamily: "'Georgia','Times New Roman',serif" }}>{children}</span>;
 
   if (!loaded) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "Georgia,serif", color: "#b86060", fontSize: 18 }}>Loading May Nails…</div>;
 
@@ -355,151 +410,27 @@ export default function MayNails() {
         .nav-btn{background:none;border:none;cursor:pointer;padding:6px 10px;border-radius:20px;font-size:12px;color:#4a2a2a;transition:background .18s,color .18s;font-family:inherit;white-space:nowrap}
         .nav-btn:hover,.nav-btn.active{background:#fceaea;color:#b86060}
         .nav-right{display:flex;gap:8px;align-items:center;flex-shrink:0}
-        .edit-toggle{background:${editMode ? "#b86060" : "transparent"};border:1.5px solid #b86060;color:${editMode ? "#fff" : "#b86060"};border-radius:20px;padding:5px 13px;font-size:12px;cursor:pointer;transition:all .18s;font-family:inherit;white-space:nowrap}
-        .edit-toggle:hover{background:#b86060;color:#fff}
-        .cart-btn{position:relative;background:#b86060;border:none;color:#fff;border-radius:20px;padding:6px 16px;font-size:12px;cursor:pointer;font-family:inherit;transition:opacity .15s;white-space:nowrap}
-        .cart-btn:hover{opacity:.88}
+        .edit-toggle{border:1.5px solid #b86060;border-radius:20px;padding:5px 13px;font-size:12px;cursor:pointer;transition:all .18s;font-family:inherit;white-space:nowrap}
+        .cart-btn{position:relative;background:#b86060;border:none;color:#fff;border-radius:20px;padding:6px 16px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
         .cart-badge{position:absolute;top:-5px;right:-5px;background:#2a1818;color:#fff;border-radius:50%;width:19px;height:19px;font-size:10px;display:flex;align-items:center;justify-content:center}
-        .hero{padding:80px 24px 64px;text-align:center;background:linear-gradient(150deg,#fff6f6 0%,#fdeaf4 55%,#fff2ec 100%)}
-        .hero-eyebrow{font-size:11px;letter-spacing:4px;text-transform:uppercase;color:#b86060;margin-bottom:18px;opacity:.8}
-        .hero-title{font-size:clamp(40px,9vw,82px);font-weight:700;color:#2a1818;letter-spacing:-2px;line-height:1.05;margin-bottom:20px;font-style:italic}
-        .hero-title span{color:#b86060}
-        .hero-tag{font-size:clamp(14px,2.5vw,17px);color:#7a5050;margin-bottom:10px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.6}
-        .hero-sub{font-size:13px;color:#b09090;margin-bottom:36px}
-        .hero-cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-        .btn-primary{background:#b86060;color:#fff;border:none;border-radius:30px;padding:12px 28px;font-size:14px;cursor:pointer;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 18px #b8606040;font-family:inherit}
-        .btn-primary:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 28px #b8606055}
-        .btn-primary:disabled{opacity:.5;cursor:not-allowed}
-        .btn-outline{background:transparent;color:#b86060;border:1.5px solid #b86060;border-radius:30px;padding:11px 24px;font-size:14px;cursor:pointer;transition:all .15s;font-family:inherit}
+        .btn-primary{background:#b86060;color:#fff;border:none;border-radius:30px;padding:12px 28px;font-size:14px;cursor:pointer;box-shadow:0 4px 18px #b8606040;font-family:inherit;transition:transform .15s,box-shadow .15s}
+        .btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 28px #b8606055}
+        .btn-outline{background:transparent;color:#b86060;border:1.5px solid #b86060;border-radius:30px;padding:11px 24px;font-size:14px;cursor:pointer;font-family:inherit;transition:background .15s}
         .btn-outline:hover{background:#fceaea}
         .section{max-width:1100px;margin:0 auto;padding:60px 20px}
-        .sec-title{font-size:28px;font-weight:700;color:#2a1818;text-align:center;margin-bottom:8px;letter-spacing:-.5px;font-style:italic}
+        .sec-title{font-size:28px;font-weight:700;color:#2a1818;text-align:center;margin-bottom:8px;font-style:italic}
         .sec-title span{color:#b86060}
         .sec-sub{text-align:center;color:#a07070;font-size:14px;margin-bottom:40px;line-height:1.6}
-        .feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
-        .feat-card{background:#fff;border-radius:18px;padding:24px 18px;border:1px solid #f5e0e0;text-align:center}
-        .feat-icon{font-size:32px;margin-bottom:10px}
-        .feat-t{font-weight:700;font-size:14px;color:#2a1818;margin-bottom:5px}
-        .feat-d{font-size:12px;color:#8a6060;line-height:1.6}
-        .ship-box{background:linear-gradient(135deg,#fff8f8,#fce8e8);border-radius:20px;padding:24px 28px;border:1px solid #f5d0d0;margin-bottom:40px}
-        .ship-title{font-size:15px;font-weight:700;color:#b86060;margin-bottom:14px}
-        .ship-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px dashed #f0c0c0;font-size:13px;color:#5a3535}
-        .ship-row:last-child{border-bottom:none}
-        .ship-price{font-weight:700;color:#b86060}
-        .free-badge{background:#b86060;color:#fff;border-radius:10px;font-size:10px;padding:2px 8px;margin-left:6px}
-        .prod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px}
-        .prod-card{background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 2px 20px #f0c0c018;border:1px solid #fae8e8;transition:transform .2s,box-shadow .2s;position:relative}
-        .prod-card:hover{transform:translateY(-4px);box-shadow:0 10px 36px #f0c0c035}
-        .prod-img-wrap{width:100%;height:200px;overflow:hidden;background:#fdf6f6;position:relative}
-        .prod-img-main{width:100%;height:100%;object-fit:cover;cursor:pointer;transition:transform .2s}
-        .prod-img-main:hover{transform:scale(1.03)}
-        .prod-img-thumbs{display:flex;gap:4px;padding:6px 10px;background:#fdf6f6;overflow-x:auto}
-        .prod-thumb{width:40px;height:40px;border-radius:6px;object-fit:cover;cursor:pointer;border:2px solid transparent;flex-shrink:0;transition:border-color .15s}
-        .prod-thumb:hover,.prod-thumb.active{border-color:#b86060}
-        .prod-body{padding:14px 18px 18px}
-        .prod-tag{position:absolute;top:12px;right:12px;background:rgba(255,255,255,.92);color:#b86060;font-size:10px;padding:3px 10px;border-radius:10px;font-weight:600;z-index:2}
-        .prod-name{font-size:16px;font-weight:700;color:#2a1818;margin-bottom:6px}
-        .prod-desc{font-size:12px;color:#8a6a6a;margin-bottom:10px;line-height:1.65}
-        .prod-sizes{font-size:11px;color:#c09090;margin-bottom:14px}
-        .prod-foot{display:flex;align-items:center;justify-content:space-between}
-        .prod-price{font-size:20px;font-weight:700;color:#b86060}
-        .prod-price::before{content:"RM ";font-size:12px;font-weight:600}
-        .add-btn{background:#b86060;color:#fff;border:none;border-radius:50%;width:34px;height:34px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .15s}
-        .add-btn:hover{transform:scale(1.15)}
-        .del-btn{position:absolute;top:10px;left:10px;background:#ff6060cc;color:#fff;border:none;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3}
-        .add-item-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:#fceaea;border:1.5px dashed #b86060;color:#b86060;border-radius:20px;padding:10px 20px;font-size:13px;cursor:pointer;margin-top:14px;transition:background .15s;font-family:inherit;width:100%}
+        .add-item-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:#fceaea;border:1.5px dashed #b86060;color:#b86060;border-radius:20px;padding:10px 20px;font-size:13px;cursor:pointer;margin-top:14px;font-family:inherit;width:100%;transition:background .15s}
         .add-item-btn:hover{background:#f8d8d8}
-        .img-slot{width:100%;height:100%;position:relative;border-radius:inherit;overflow:hidden}
-        .img-placeholder{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fdf6f6;gap:4px}
-        .img-remove{position:absolute;top:6px;right:6px;background:rgba(255,255,255,.9);border:none;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#b86060;box-shadow:0 1px 4px #0002;z-index:4}
-        .gal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
-        .gal-item{border-radius:18px;overflow:hidden;position:relative;aspect-ratio:1;border:1px solid #fae8e8;cursor:pointer}
-        .gal-label-bar{position:absolute;bottom:0;left:0;right:0;background:rgba(255,250,248,.88);padding:6px 10px;font-size:12px;color:#5a3535;display:flex;align-items:center;justify-content:space-between}
-        .gal-del{background:none;border:none;cursor:pointer;color:#b86060;font-size:14px;opacity:.7}
-        .gal-del:hover{opacity:1}
-        .guide-imgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:28px}
-        .guide-img-card{border-radius:16px;overflow:hidden;aspect-ratio:4/3;border:1px solid #fae8e8;cursor:pointer;position:relative;background:#fdf6f6}
-        .faq-list{display:flex;flex-direction:column;gap:12px}
-        .faq-item{background:#fff;border-radius:18px;padding:20px 24px;border:1px solid #fae0e0;position:relative}
-        .faq-q{font-size:14px;font-weight:700;color:#2a1818;margin-bottom:7px}
-        .faq-a{font-size:13px;color:#7a5858;line-height:1.75}
-        .con-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px}
-        .con-card{background:#fff;border-radius:20px;padding:24px;border:1px solid #fae0e0;text-align:center;transition:box-shadow .2s}
-        .con-card:hover{box-shadow:0 4px 20px #f0c0c030}
-        .con-icon{font-size:32px;margin-bottom:10px}
-        .con-lbl{font-size:11px;color:#b08080;margin-bottom:4px;letter-spacing:1px;text-transform:uppercase}
-        .con-val{font-size:14px;font-weight:700;color:#2a1818;word-break:break-all}
-        .con-val-link{font-size:14px;font-weight:700;color:#b86060;word-break:break-all;text-decoration:none}
-        .con-val-link:hover{text-decoration:underline}
-        .con-note{text-align:center;margin-top:24px;background:#fceaea;border-radius:16px;padding:16px 22px;font-size:13px;color:#8a5858;line-height:1.7}
-        .pay-settings{background:#fff;border-radius:18px;padding:24px;border:1px solid #fae0e0;margin-top:24px}
-        .pay-set-title{font-size:14px;font-weight:700;color:#b86060;margin-bottom:14px}
-        .pay-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
-        .pay-field label{font-size:11px;color:#b08080;letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:4px}
-        .pay-field input{width:100%;border:1.5px solid #f0d0d0;border-radius:8px;padding:7px 10px;font-size:13px;font-family:inherit;color:#2a1818;outline:none;background:#fffaf8}
-        .pay-field input:focus{border-color:#b86060}
-        .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
-        .modal{background:#fffaf8;border-radius:24px;width:100%;max-width:520px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
-        .modal-header{padding:20px 24px;border-bottom:1px solid #fae0e0;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
-        .modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:#b86060}
-        .modal-body{padding:20px 24px;overflow-y:auto}
-        .order-summary-mini{background:#fdf6f6;border-radius:14px;padding:14px;margin-bottom:18px;display:flex;flex-direction:column;gap:5px}
-        .osi{display:flex;justify-content:space-between;font-size:13px;color:#5a3535}
-        .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-        .form-field{display:flex;flex-direction:column;gap:4px}
-        .form-field label{font-size:11px;color:#b08080;letter-spacing:.5px;text-transform:uppercase}
-        .form-input{border:1.5px solid #f0d0d0;border-radius:10px;padding:9px 12px;font-size:13px;font-family:inherit;outline:none;background:#fff}
-        .form-input:focus{border-color:#b86060}
-        .pay-tab{flex:1;padding:10px;border-radius:12px;border:1.5px solid #f0d0d0;background:#fff;cursor:pointer;font-family:inherit;font-size:13px;color:#5a3535;transition:all .15s}
-        .pay-tab.active{background:#fceaea;border-color:#b86060;color:#b86060;font-weight:700}
-        .pay-box{background:#fdf6f6;border-radius:14px;padding:18px;border:1px solid #f5d0d0}
-        .pay-title{font-size:13px;font-weight:700;color:#b86060;margin-bottom:12px}
-        .pay-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#5a3535;padding:6px 0;border-bottom:1px dashed #f0d0d0}
-        .pay-row:last-child{border-bottom:none}
-        .proof-upload{border:2px dashed #e0c0c0;border-radius:14px;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;cursor:pointer;min-height:100px;background:#fffaf8}
-        .proof-upload:hover{border-color:#b86060}
-        .cart-overlay{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:200}
-        .cart-drawer{position:fixed;right:0;top:0;bottom:0;width:min(390px,100vw);background:#fffaf8;z-index:201;display:flex;flex-direction:column;box-shadow:-4px 0 40px #b8606025}
-        .cart-header{padding:20px 24px;border-bottom:1px solid #fae0e0;display:flex;justify-content:space-between;align-items:center}
-        .cart-header h2{font-size:17px;color:#b86060;font-style:italic}
-        .cart-close{background:none;border:none;font-size:20px;cursor:pointer;color:#b86060}
-        .cart-items{flex:1;overflow-y:auto;padding:16px 24px;display:flex;flex-direction:column;gap:10px}
-        .cart-item{display:flex;align-items:center;gap:10px;background:#fff;border-radius:14px;padding:10px 14px;border:1px solid #fae8e8}
-        .cart-thumb{width:48px;height:48px;border-radius:10px;object-fit:cover;background:#fdf6f6;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px}
-        .cart-info{flex:1;min-width:0}
-        .cart-iname{font-size:13px;font-weight:700;color:#2a1818;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .cart-iprice{font-size:12px;color:#b86060;font-weight:700}
-        .qty-ctrl{display:flex;align-items:center;gap:6px}
-        .qty-btn{background:#fceaea;border:none;border-radius:50%;width:24px;height:24px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#b86060;flex-shrink:0}
-        .qty-val{font-size:13px;font-weight:700;min-width:18px;text-align:center}
-        .cart-rm{background:none;border:none;color:#ccc;cursor:pointer;font-size:15px;transition:color .15s;flex-shrink:0}
-        .cart-rm:hover{color:#b86060}
-        .cart-footer{padding:18px 24px;border-top:1px solid #fae0e0}
-        .cart-sum{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
-        .cart-sum-row{display:flex;justify-content:space-between;font-size:13px;color:#7a5858}
-        .cart-tot{display:flex;justify-content:space-between;font-size:16px;font-weight:700;color:#2a1818;padding-top:8px;border-top:1px dashed #fae0e0;margin-top:6px}
-        .checkout-btn{width:100%;background:#b86060;color:#fff;border:none;border-radius:30px;padding:14px;font-size:15px;cursor:pointer;font-family:inherit;transition:transform .15s}
-        .checkout-btn:hover{transform:translateY(-1px)}
-        .cart-empty{text-align:center;color:#c09090;padding:48px 20px;font-size:13px;line-height:2.2}
-        .orders-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:10px}
-        .order-card{background:#fff;border-radius:18px;padding:20px;border:1px solid #fae0e0;position:relative;margin-bottom:14px}
-        .order-top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-        .order-id{font-size:12px;color:#b08080;font-family:monospace}
-        .status-badge{border-radius:12px;padding:3px 12px;font-size:11px;font-weight:700}
-        .status-sel{border:1.5px solid #f0d0d0;border-radius:10px;padding:6px 10px;font-size:12px;font-family:inherit;color:#5a3535;background:#fffaf8;cursor:pointer;outline:none}
-        .proof-thumb{width:80px;height:80px;border-radius:10px;object-fit:cover;border:1px solid #fae0e0;cursor:pointer;margin-top:8px}
-        .empty-orders{text-align:center;padding:60px 20px;color:#c09090;font-size:14px;line-height:2}
         .ed{cursor:pointer;border-radius:4px;transition:background .15s;display:inline}
         .ed:hover{background:#fceaea}
         .eico{font-size:9px;margin-left:3px;opacity:.4}
         .ei{border:1.5px solid #b86060;border-radius:6px;padding:2px 7px;font-size:inherit;font-family:inherit;color:inherit;background:#fff9f9;outline:none;min-width:60px}
-        .eta{border:1.5px solid #b86060;border-radius:6px;padding:4px 8px;font-size:inherit;font-family:inherit;color:inherit;background:#fff9f9;outline:none;width:100%;resize:vertical;min-height:54px}
+        .eta{border:1.5px solid #b86060;border-radius:6px;padding:4px 8px;font-size:inherit;font-family:inherit;color:inherit;background:#fff9f9;outline:none;width:100%;resize:vertical;min-height:54px;display:block}
         .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#2a1818;color:#fff;border-radius:30px;padding:10px 24px;font-size:13px;z-index:500;animation:fu .3s ease;pointer-events:none;white-space:nowrap}
         @keyframes fu{from{opacity:0;transform:translateX(-50%) translateY(12px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
-        .divider{height:1px;background:linear-gradient(to right,transparent,#f0d0d0,transparent);max-width:1100px;margin:0 auto}
-        .footer{background:#2a1818;color:#c09090;text-align:center;padding:30px 20px;font-size:13px;line-height:2.2}
-        .footer strong{color:#f0b0b0;font-style:italic;font-size:15px;letter-spacing:2px}
-        @media(max-width:600px){.nav{padding:0 10px}.nav-logo{font-size:15px}.nav-links .nav-btn{padding:5px 6px;font-size:10px}.hero{padding:52px 14px 42px}.section{padding:44px 14px}.form-grid{grid-template-columns:1fr}}
+        @media(max-width:600px){.nav{padding:0 10px}.nav-logo{font-size:15px}.nav-links .nav-btn{padding:4px 6px;font-size:10px}.section{padding:40px 14px}}
       `}</style>
 
       {/* NAV */}
@@ -511,8 +442,9 @@ export default function MayNails() {
           ))}
         </div>
         <div className="nav-right">
-          {IS_ADMIN_URL && (
-            <button className="edit-toggle" onClick={() => { if (!editMode) setShowLogin(true); else { setEditMode(false); if (section === "orders") setSection("home"); } }}>
+          {isAdmin && (
+            <button className="edit-toggle" onClick={() => { setEditMode(m => !m); if (editMode && section === "orders") setSection("home"); }}
+              style={{ background: editMode ? "#b86060" : "transparent", color: editMode ? "#fff" : "#b86060" }}>
               {editMode ? "✅ Done" : "✏️ Edit"}
             </button>
           )}
@@ -524,38 +456,46 @@ export default function MayNails() {
 
       {toast && <div className="toast">{toast}</div>}
       {lightbox && <Lightbox images={lightbox.images} startIdx={lightbox.idx} onClose={() => setLightbox(null)} />}
-      {showLogin && <AdminLogin onSuccess={() => { setEditMode(true); setShowLogin(false); }} onClose={() => setShowLogin(false)} />}
+      {showLogin && <AdminLogin onSuccess={() => { setIsAdmin(true); setShowLogin(false); }} onClose={() => setShowLogin(false)} />}
 
       {/* CART */}
       {cartOpen && <>
-        <div className="cart-overlay" onClick={() => setCartOpen(false)} />
-        <div className="cart-drawer">
-          <div className="cart-header"><h2>Your Cart 🛒</h2><button className="cart-close" onClick={() => setCartOpen(false)}>✕</button></div>
-          <div className="cart-items">
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.28)", zIndex: 200 }} onClick={() => setCartOpen(false)} />
+        <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: "min(390px,100vw)", background: "#fffaf8", zIndex: 201, display: "flex", flexDirection: "column", boxShadow: "-4px 0 40px #b8606025" }}>
+          <div style={{ padding: "20px 24px", borderBottom: "1px solid #fae0e0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h2 style={{ fontSize: 17, color: "#b86060", fontStyle: "italic" }}>Your Cart 🛒</h2>
+            <button onClick={() => setCartOpen(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#b86060" }}>✕</button>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
             {cart.length === 0
-              ? <div className="cart-empty">Your cart is empty.<br />Browse our collection and pick something you love 💅</div>
+              ? <div style={{ textAlign: "center", color: "#c09090", padding: "48px 20px", fontSize: 13, lineHeight: 2.2 }}>Your cart is empty.<br />Browse our collection 💅</div>
               : cart.map(item => (
-                <div key={item.id} className="cart-item">
-                  <div className="cart-thumb">{item.images?.[0] ? <img src={item.images[0]} alt={item.name} style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover" }} /> : "💅"}</div>
-                  <div className="cart-info"><div className="cart-iname">{item.name}</div><div className="cart-iprice">{fmt(item.price)}</div></div>
-                  <div className="qty-ctrl">
-                    <button className="qty-btn" onClick={() => adjustQty(item.id, -1)}>−</button>
-                    <span className="qty-val">{item.qty}</span>
-                    <button className="qty-btn" onClick={() => adjustQty(item.id, 1)}>+</button>
+                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", borderRadius: 14, padding: "10px 14px", border: "1px solid #fae8e8" }}>
+                  <div style={{ width: 48, height: 48, borderRadius: 10, overflow: "hidden", flexShrink: 0, background: "#fdf6f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
+                    {item.images?.[0] ? <img src={item.images[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "💅"}
                   </div>
-                  <button className="cart-rm" onClick={() => removeFromCart(item.id)}>✕</button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#2a1818", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
+                    <div style={{ fontSize: 12, color: "#b86060", fontWeight: 700 }}>{fmt(item.price)}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <button onClick={() => adjustQty(item.id, -1)} style={{ background: "#fceaea", border: "none", borderRadius: "50%", width: 24, height: 24, fontSize: 14, cursor: "pointer", color: "#b86060" }}>−</button>
+                    <span style={{ fontSize: 13, fontWeight: 700, minWidth: 18, textAlign: "center" }}>{item.qty}</span>
+                    <button onClick={() => adjustQty(item.id, 1)} style={{ background: "#fceaea", border: "none", borderRadius: "50%", width: 24, height: 24, fontSize: 14, cursor: "pointer", color: "#b86060" }}>+</button>
+                  </div>
+                  <button onClick={() => removeFromCart(item.id)} style={{ background: "none", border: "none", color: "#ccc", cursor: "pointer", fontSize: 15 }}>✕</button>
                 </div>
               ))}
           </div>
           {cart.length > 0 && (
-            <div className="cart-footer">
-              <div className="cart-sum">
-                <div className="cart-sum-row"><span>Subtotal</span><span>{fmt(cartTotal)}</span></div>
-                <div className="cart-sum-row"><span>Shipping ({settings.shipping.standard.label})</span><span>{shippingFee === 0 ? <span style={{ color: "#b86060" }}>Free</span> : fmt(shippingFee)}</span></div>
-                {cartTotal < settings.shipping.free_threshold && <div className="cart-sum-row" style={{ fontSize: 11, color: "#c09090" }}>Add {fmt(settings.shipping.free_threshold - cartTotal)} more for free shipping 🎉</div>}
-                <div className="cart-tot"><span>Total</span><span style={{ color: "#b86060" }}>{fmt(cartTotal + shippingFee)}</span></div>
+            <div style={{ padding: "18px 24px", borderTop: "1px solid #fae0e0" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#7a5858" }}><span>Subtotal</span><span>{fmt(cartTotal)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#7a5858" }}><span>Shipping</span><span>{shippingFee === 0 ? <span style={{ color: "#b86060" }}>Free</span> : fmt(shippingFee)}</span></div>
+                {cartTotal < settings.shipping.free_threshold && <div style={{ fontSize: 11, color: "#c09090" }}>Add {fmt(settings.shipping.free_threshold - cartTotal)} more for free shipping 🎉</div>}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 700, paddingTop: 8, borderTop: "1px dashed #fae0e0", marginTop: 4 }}><span>Total</span><span style={{ color: "#b86060" }}>{fmt(cartTotal + shippingFee)}</span></div>
               </div>
-              <button className="checkout-btn" onClick={() => { setCartOpen(false); setCheckout(true); }}>Checkout →</button>
+              <button onClick={() => { setCartOpen(false); setCheckout(true); }} style={{ width: "100%", background: "#b86060", color: "#fff", border: "none", borderRadius: 30, padding: 14, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>Checkout →</button>
             </div>
           )}
         </div>
@@ -563,14 +503,18 @@ export default function MayNails() {
 
       {checkout && <CheckoutModal cart={cart} total={cartTotal} shipping={shippingFee} settings={settings} onClose={() => setCheckout(false)} onOrderPlaced={order => { placeOrder(order); setCheckout(false); showToast("Order placed! 🩷"); }} />}
 
-      {/* HOME */}
+      {/* ══ HOME ══ */}
       {section === "home" && <>
-        <div className="hero">
-          <p className="hero-eyebrow">Press-on Nails · Malaysia</p>
-          <h1 className="hero-title">May <span>Nails</span></h1>
-          <p className="hero-tag">{editMode ? <ET value={settings.hero.tagline} onChange={v => updS("hero.tagline", v)} /> : settings.hero.tagline}</p>
-          <p className="hero-sub">{editMode ? <ET value={settings.hero.subtext} onChange={v => updS("hero.subtext", v)} /> : settings.hero.subtext}</p>
-          <div className="hero-cta">
+        <div style={{ padding: "80px 24px 64px", textAlign: "center", background: "linear-gradient(150deg,#fff6f6 0%,#fdeaf4 55%,#fff2ec 100%)" }}>
+          <p style={{ fontSize: 11, letterSpacing: 4, textTransform: "uppercase", color: "#b86060", marginBottom: 18, opacity: .8 }}>Press-on Nails · Malaysia</p>
+          <h1 style={{ fontSize: "clamp(40px,9vw,82px)", fontWeight: 700, color: "#2a1818", letterSpacing: -2, lineHeight: 1.05, marginBottom: 20, fontStyle: "italic" }}>May <span style={{ color: "#b86060" }}>Nails</span></h1>
+          <p style={{ fontSize: "clamp(14px,2.5vw,17px)", color: "#7a5050", marginBottom: 10, maxWidth: 520, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
+            {editMode ? <ET value={settings.hero.tagline} onChange={v => updS("hero.tagline", v)} /> : settings.hero.tagline}
+          </p>
+          <p style={{ fontSize: 13, color: "#b09090", marginBottom: 36 }}>
+            {editMode ? <ET value={settings.hero.subtext} onChange={v => updS("hero.subtext", v)} /> : settings.hero.subtext}
+          </p>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
             <button className="btn-primary" onClick={() => setSection("shop")}>Shop Now 💅</button>
             <button className="btn-outline" onClick={() => setSection("gallery")}>View Gallery 🌸</button>
           </div>
@@ -578,76 +522,60 @@ export default function MayNails() {
         <div className="section">
           <h2 className="sec-title">Why <span>press-ons?</span></h2>
           <p className="sec-sub">Everything you love about a nail salon — without the appointment.</p>
-          <div className="feat-grid">
-            {[["⏱️", "5-minute application", "No waiting, no drying time — just press and go."], ["🌿", "Zero nail damage", "No filing or drilling. Your natural nails stay healthy."], ["🎨", "New styles weekly", "Fresh designs dropped regularly — always something new."], ["📦", "Ships within 24 hrs", "Order today, on its way tomorrow."]].map(([i, t, d]) => (
-              <div key={t} className="feat-card"><div className="feat-icon">{i}</div><div className="feat-t">{t}</div><div className="feat-d">{d}</div></div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 16 }}>
+            {[["⏱️", "5-minute application", "No waiting, no drying time — just press and go."], ["🌿", "Zero nail damage", "No filing or drilling. Your natural nails stay healthy."], ["🎨", "New styles weekly", "Fresh designs dropped regularly — always something new."], ["📦", "Ships within 24 hrs", "Order today, on its way tomorrow."]].map(([icon, title, desc]) => (
+              <div key={title} style={{ background: "#fff", borderRadius: 18, padding: "24px 18px", border: "1px solid #f5e0e0", textAlign: "center" }}>
+                <div style={{ fontSize: 32, marginBottom: 10 }}>{icon}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: "#2a1818", marginBottom: 5 }}>{title}</div>
+                <div style={{ fontSize: 12, color: "#8a6060", lineHeight: 1.6 }}>{desc}</div>
+              </div>
             ))}
           </div>
         </div>
       </>}
 
-      {/* SHOP */}
+      {/* ══ SHOP ══ */}
       {section === "shop" && (
         <div className="section">
           <h2 className="sec-title">Our <span>Collection</span></h2>
           <p className="sec-sub">Each set includes 10 nails (thumb to pinky) + spare sizes.</p>
-          <div className="ship-box">
-            <div className="ship-title">📦 Shipping</div>
-            <div className="ship-row"><span>Free shipping on orders over RM {editMode ? <ET value={String(settings.shipping.free_threshold)} onChange={v => updS("shipping.free_threshold", Number(v))} /> : settings.shipping.free_threshold}<span className="free-badge">FREE</span></span></div>
-            <div className="ship-row"><span>{editMode ? <ET value={settings.shipping.standard.label} onChange={v => updS("shipping.standard.label", v)} /> : settings.shipping.standard.label} ({editMode ? <ET value={settings.shipping.standard.days} onChange={v => updS("shipping.standard.days", v)} /> : settings.shipping.standard.days})</span><span className="ship-price">RM {editMode ? <ET value={String(settings.shipping.standard.price)} onChange={v => updS("shipping.standard.price", Number(v))} /> : settings.shipping.standard.price}</span></div>
-            <div className="ship-row"><span>{editMode ? <ET value={settings.shipping.express.label} onChange={v => updS("shipping.express.label", v)} /> : settings.shipping.express.label} ({editMode ? <ET value={settings.shipping.express.days} onChange={v => updS("shipping.express.days", v)} /> : settings.shipping.express.days})</span><span className="ship-price">RM {editMode ? <ET value={String(settings.shipping.express.price)} onChange={v => updS("shipping.express.price", Number(v))} /> : settings.shipping.express.price}</span></div>
+          {/* Shipping box */}
+          <div style={{ background: "linear-gradient(135deg,#fff8f8,#fce8e8)", borderRadius: 20, padding: "24px 28px", border: "1px solid #f5d0d0", marginBottom: 40 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#b86060", marginBottom: 14 }}>📦 Shipping</div>
+            {[
+              [null, <>Free shipping on orders over RM {editMode ? <ET value={String(settings.shipping.free_threshold)} onChange={v => updS("shipping.free_threshold", Number(v))} /> : settings.shipping.free_threshold} <span style={{ background: "#b86060", color: "#fff", borderRadius: 10, fontSize: 10, padding: "2px 8px", marginLeft: 4 }}>FREE</span></>],
+              [<>RM {editMode ? <ET value={String(settings.shipping.standard.price)} onChange={v => updS("shipping.standard.price", Number(v))} /> : settings.shipping.standard.price}</>, <>{editMode ? <ET value={settings.shipping.standard.label} onChange={v => updS("shipping.standard.label", v)} /> : settings.shipping.standard.label} ({editMode ? <ET value={settings.shipping.standard.days} onChange={v => updS("shipping.standard.days", v)} /> : settings.shipping.standard.days})</>],
+              [<>RM {editMode ? <ET value={String(settings.shipping.express.price)} onChange={v => updS("shipping.express.price", Number(v))} /> : settings.shipping.express.price}</>, <>{editMode ? <ET value={settings.shipping.express.label} onChange={v => updS("shipping.express.label", v)} /> : settings.shipping.express.label} ({editMode ? <ET value={settings.shipping.express.days} onChange={v => updS("shipping.express.days", v)} /> : settings.shipping.express.days})</>],
+            ].map(([price, label], i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: i < 2 ? "1px dashed #f0c0c0" : "none", fontSize: 13, color: "#5a3535" }}>
+                <span>{label}</span>{price && <span style={{ fontWeight: 700, color: "#b86060" }}>{price}</span>}
+              </div>
+            ))}
           </div>
-          <div className="prod-grid">
-            {products.map((p, idx) => {
-              const imgs = p.images || [];
-              const [activeImg, setActiveImg] = useState(0);
-              return (
-                <div key={p.id} className="prod-card">
-                  {editMode && <button className="del-btn" onClick={() => delProduct(p.id)}>✕</button>}
-                  {p.tag && <div className="prod-tag">{editMode ? <ET value={p.tag} onChange={v => updProduct(p.id, "tag", v)} /> : p.tag}</div>}
-                  <div className="prod-img-wrap">
-                    {imgs.length > 0
-                      ? <img className="prod-img-main" src={imgs[activeImg] || imgs[0]} alt={p.name} onClick={() => setLightbox({ images: imgs, idx: activeImg })} />
-                      : <div className="img-placeholder">{editMode ? <><span style={{ fontSize: 28 }}>📷</span><span style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>Upload photo</span></> : <span style={{ opacity: 0.3, fontSize: 22 }}>🖼️</span>}</div>}
-                  </div>
-                  {imgs.length > 1 && (
-                    <div className="prod-img-thumbs">
-                      {imgs.map((src, i) => <img key={i} className={`prod-thumb ${i === activeImg ? "active" : ""}`} src={src} alt="" onClick={() => setActiveImg(i)} />)}
-                    </div>
-                  )}
-                  {editMode && (
-                    <div style={{ padding: "6px 12px" }}>
-                      <MultiImgUpload images={imgs} editMode={editMode}
-                        onAdd={img => updProduct(p.id, "images", [...imgs, img])}
-                        onRemove={i => { const next = imgs.filter((_, idx2) => idx2 !== i); updProduct(p.id, "images", next); setActiveImg(0); }} />
-                    </div>
-                  )}
-                  <div className="prod-body">
-                    <div className="prod-name">{editMode ? <ET value={p.name} onChange={v => updProduct(p.id, "name", v)} /> : p.name}</div>
-                    <div className="prod-desc">{editMode ? <ET value={p.desc} onChange={v => updProduct(p.id, "desc", v)} multi /> : p.desc}</div>
-                    <div className="prod-sizes">Sizes: {editMode ? <ET value={p.sizes} onChange={v => updProduct(p.id, "sizes", v)} /> : p.sizes}</div>
-                    <div className="prod-foot">
-                      <div className="prod-price">{editMode ? <ET value={String(p.price)} onChange={v => updProduct(p.id, "price", Number(v))} /> : p.price}</div>
-                      <button className="add-btn" onClick={() => addToCart(p)}>+</button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+          {/* Products */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 20 }}>
+            {products.map(p => (
+              <ProductCard key={p.id} p={p} editMode={editMode}
+                onUpdate={updProduct} onDelete={delProduct}
+                onAddToCart={addToCart}
+                onLightbox={(imgs, idx) => setLightbox({ images: imgs, idx })} />
+            ))}
           </div>
           {editMode && <button className="add-item-btn" onClick={addProduct}>＋ Add new style</button>}
+          {/* Payment settings */}
           {editMode && (
-            <div className="pay-settings">
-              <div className="pay-set-title">💳 Payment Details</div>
-              <div className="pay-fields">
+            <div style={{ background: "#fff", borderRadius: 18, padding: 24, border: "1px solid #fae0e0", marginTop: 28 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#b86060", marginBottom: 14 }}>💳 Payment Details</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 10 }}>
                 {[["Bank name", "bank_name"], ["Account number", "bank_acc"], ["Account holder", "bank_holder"], ["TNG number", "tng_number"]].map(([lbl, key]) => (
-                  <div key={key} className="pay-field"><label>{lbl}</label><input value={settings.payment[key]} onChange={e => updS(`payment.${key}`, e.target.value)} /></div>
-                ))}
-                <div className="pay-field" style={{ gridColumn: "1/-1" }}>
-                  <label>TNG QR Code image</label>
-                  <div style={{ marginTop: 6 }}>
-                    <ImgSlot src={settings.payment.tng_qr} editMode={true} label="TNG QR" style={{ width: 140, height: 140, borderRadius: 12, border: "1px solid #fae0e0" }} onUpload={img => updS("payment.tng_qr", img)} onRemove={() => updS("payment.tng_qr", null)} />
+                  <div key={key}>
+                    <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px", display: "block", marginBottom: 4 }}>{lbl}</label>
+                    <input value={settings.payment[key]} onChange={e => updS(`payment.${key}`, e.target.value)} style={{ width: "100%", border: "1.5px solid #f0d0d0", borderRadius: 8, padding: "7px 10px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fffaf8" }} />
                   </div>
+                ))}
+                <div style={{ gridColumn: "1/-1" }}>
+                  <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px", display: "block", marginBottom: 6 }}>TNG QR Code</label>
+                  <ImgSlot src={settings.payment.tng_qr} editMode={true} style={{ width: 140, height: 140, borderRadius: 12, border: "1px solid #fae0e0" }} onUpload={img => updS("payment.tng_qr", img)} onRemove={() => updS("payment.tng_qr", null)} />
                 </div>
               </div>
             </div>
@@ -655,18 +583,19 @@ export default function MayNails() {
         </div>
       )}
 
-      {/* GALLERY */}
+      {/* ══ GALLERY ══ */}
       {section === "gallery" && (
         <div className="section">
           <h2 className="sec-title">Our <span>Gallery</span></h2>
           <p className="sec-sub">Real nails, real results. Tag us to be featured.</p>
-          <div className="gal-grid">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 16 }}>
             {gallery.map(g => (
-              <div key={g.id} className="gal-item" style={{ background: g.bg }} onClick={() => g.image && !editMode && setLightbox({ images: [g.image], idx: 0 })}>
-                <ImgSlot src={g.image} editMode={editMode} label={g.label} style={{ borderRadius: 18 }} onUpload={img => updGallery(g.id, "image", img)} onRemove={() => updGallery(g.id, "image", null)} />
-                <div className="gal-label-bar">
+              <div key={g.id} style={{ borderRadius: 18, overflow: "hidden", position: "relative", aspectRatio: "1", border: "1px solid #fae8e8", background: g.bg, cursor: g.image && !editMode ? "zoom-in" : "default" }}
+                onClick={() => g.image && !editMode && setLightbox({ images: [g.image], idx: 0 })}>
+                <ImgSlot src={g.image} editMode={editMode} label={g.label} style={{ borderRadius: 18, width: "100%", height: "100%" }} onUpload={img => updGallery(g.id, "image", img)} onRemove={() => updGallery(g.id, "image", null)} />
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(255,250,248,.88)", padding: "7px 12px", fontSize: 12, color: "#5a3535", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   {editMode ? <ET value={g.label} onChange={v => updGallery(g.id, "label", v)} /> : <span>{g.label}</span>}
-                  {editMode && <button className="gal-del" onClick={e => { e.stopPropagation(); delGalleryItem(g.id); }}>✕</button>}
+                  {editMode && <button onClick={e => { e.stopPropagation(); delGalleryItem(g.id); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#b86060", fontSize: 14, opacity: .7 }}>✕</button>}
                 </div>
               </div>
             ))}
@@ -681,49 +610,57 @@ export default function MayNails() {
         </div>
       )}
 
-      {/* SIZE GUIDE */}
+      {/* ══ SIZE GUIDE ══ */}
       {section === "guide" && (
         <div className="section">
-          <h2 className="sec-title">
+          <h2 className="sec-title" style={{ marginBottom: 12 }}>
             {editMode ? <ET value={settings.guide.title} onChange={v => updS("guide.title", v)} /> : settings.guide.title}
           </h2>
           {(settings.guide.desc || editMode) && (
             <div style={{ maxWidth: 680, margin: "0 auto 36px", fontSize: 14, color: "#7a5858", lineHeight: 1.85, textAlign: "center" }}>
-              {editMode ? <ET value={settings.guide.desc} onChange={v => updS("guide.desc", v)} multi placeholder="Add a description (optional)" /> : settings.guide.desc}
+              {editMode ? <ET value={settings.guide.desc} onChange={v => updS("guide.desc", v)} multi placeholder="Add a description here (optional — leave blank to hide)" /> : settings.guide.desc}
             </div>
           )}
-          <div className="guide-imgs">
+          {/* Guide images — full width, tall cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 18 }}>
             {(settings.guide.images || []).map((src, i) => (
-              <div key={i} className="guide-img-card" onClick={() => !editMode && setLightbox({ images: settings.guide.images, idx: i })}>
-                <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                {editMode && <button onClick={e => { e.stopPropagation(); const next = settings.guide.images.filter((_, j) => j !== i); updS("guide.images", next); }} style={{ position: "absolute", top: 6, right: 6, background: "rgba(255,255,255,.9)", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 11, cursor: "pointer", color: "#b86060" }}>✕</button>}
+              <div key={i} style={{ borderRadius: 18, overflow: "hidden", position: "relative", border: "1px solid #fae8e8", background: "#fdf6f6" }}>
+                <img src={src} alt="" style={{ width: "100%", display: "block", objectFit: "cover", cursor: "zoom-in", maxHeight: 480 }} onClick={() => setLightbox({ images: settings.guide.images, idx: i })} />
+                {editMode && (
+                  <button onClick={() => { const next = (settings.guide.images || []).filter((_, j) => j !== i); updS("guide.images", next); }}
+                    style={{ position: "absolute", top: 8, right: 8, background: "rgba(255,255,255,.92)", border: "none", borderRadius: "50%", width: 26, height: 26, fontSize: 12, cursor: "pointer", color: "#b86060", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px #0002" }}>✕</button>
+                )}
               </div>
             ))}
             {editMode && (
-              <div style={{ borderRadius: 16, border: "1.5px dashed #e0c0c0", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", background: "#fdf9f9", aspectRatio: "4/3", fontSize: 28, gap: 6 }}
+              <div style={{ borderRadius: 18, border: "1.5px dashed #e0c0c0", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", background: "#fdf9f9", minHeight: 200, gap: 8, fontSize: 32 }}
                 onClick={() => { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.onchange = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => updS("guide.images", [...(settings.guide.images || []), ev.target.result]); r.readAsDataURL(f); }; inp.click(); }}>
-                📷<span style={{ fontSize: 12, color: "#c09090" }}>Add image</span>
+                📷<span style={{ fontSize: 13, color: "#c09090" }}>Add tutorial image</span>
               </div>
             )}
           </div>
           {(settings.guide.images || []).length === 0 && !editMode && (
-            <div style={{ textAlign: "center", color: "#c09090", padding: "40px 0", fontSize: 14 }}>Size guide images coming soon 🩷</div>
+            <div style={{ textAlign: "center", color: "#c09090", padding: "60px 0", fontSize: 14 }}>Size guide coming soon 🩷</div>
           )}
         </div>
       )}
 
-      {/* FAQ */}
+      {/* ══ FAQ ══ */}
       {section === "faq" && (
         <div className="section">
           <h2 className="sec-title">Frequently Asked <span>Questions</span></h2>
           <p className="sec-sub">Everything you need to know before your first set.</p>
-          <div className="faq-list">
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {settings.faq.map((f, i) => (
-              <div key={f.id} className="faq-item">
-                {editMode && <button style={{ position: "absolute", top: 12, right: 12, background: "#ff6060cc", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-                  onClick={() => { const next = JSON.parse(JSON.stringify(settings)); next.faq.splice(i, 1); saveSettings(next); }}>✕</button>}
-                <div className="faq-q">{editMode ? <ET value={f.q} onChange={v => { const next = JSON.parse(JSON.stringify(settings)); next.faq[i].q = v; saveSettings(next); }} /> : f.q}</div>
-                <div className="faq-a">{editMode ? <ET value={f.a} onChange={v => { const next = JSON.parse(JSON.stringify(settings)); next.faq[i].a = v; saveSettings(next); }} multi /> : f.a}</div>
+              <div key={f.id} style={{ background: "#fff", borderRadius: 18, padding: "20px 24px", border: "1px solid #fae0e0", position: "relative" }}>
+                {editMode && <button onClick={() => { const next = JSON.parse(JSON.stringify(settings)); next.faq.splice(i, 1); saveSettings(next); }}
+                  style={{ position: "absolute", top: 12, right: 12, background: "#ff6060cc", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#2a1818", marginBottom: 7 }}>
+                  {editMode ? <ET value={f.q} onChange={v => { const next = JSON.parse(JSON.stringify(settings)); next.faq[i].q = v; saveSettings(next); }} /> : f.q}
+                </div>
+                <div style={{ fontSize: 13, color: "#7a5858", lineHeight: 1.75 }}>
+                  {editMode ? <ET value={f.a} onChange={v => { const next = JSON.parse(JSON.stringify(settings)); next.faq[i].a = v; saveSettings(next); }} multi /> : f.a}
+                </div>
               </div>
             ))}
           </div>
@@ -735,81 +672,83 @@ export default function MayNails() {
         </div>
       )}
 
-      {/* CONTACT */}
+      {/* ══ CONTACT ══ */}
       {section === "contact" && (
         <div className="section">
           <h2 className="sec-title">Get in <span>Touch</span></h2>
           <p className="sec-sub">Order · Ask a question · Exchange — we're here for it all.</p>
-          <div className="con-grid">
-            {/* Instagram */}
-            <div className="con-card">
-              <div className="con-icon">📸</div>
-              <div className="con-lbl">Instagram</div>
-              {editMode ? <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><div style={{ fontSize: 11, color: "#c09090" }}>Label</div><ET value={settings.contact.instagram_label} onChange={v => updS("contact.instagram_label", v)} /><div style={{ fontSize: 11, color: "#c09090", marginTop: 4 }}>URL</div><ET value={settings.contact.instagram} onChange={v => updS("contact.instagram", v)} /></div>
-                : <a href={settings.contact.instagram} target="_blank" rel="noreferrer" className="con-val-link">{settings.contact.instagram_label}</a>}
-            </div>
-            {/* TikTok */}
-            <div className="con-card">
-              <div className="con-icon">🎵</div>
-              <div className="con-lbl">TikTok</div>
-              {editMode ? <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><div style={{ fontSize: 11, color: "#c09090" }}>Label</div><ET value={settings.contact.tiktok_label} onChange={v => updS("contact.tiktok_label", v)} /><div style={{ fontSize: 11, color: "#c09090", marginTop: 4 }}>URL</div><ET value={settings.contact.tiktok} onChange={v => updS("contact.tiktok", v)} /></div>
-                : <a href={settings.contact.tiktok} target="_blank" rel="noreferrer" className="con-val-link">{settings.contact.tiktok_label}</a>}
-            </div>
-            {/* Email */}
-            <div className="con-card">
-              <div className="con-icon">📧</div>
-              <div className="con-lbl">Email</div>
-              {editMode ? <ET value={settings.contact.email} onChange={v => updS("contact.email", v)} />
-                : <a href={`mailto:${settings.contact.email}`} className="con-val-link">{settings.contact.email}</a>}
-            </div>
-            {/* Hours */}
-            <div className="con-card">
-              <div className="con-icon">🕐</div>
-              <div className="con-lbl">Hours</div>
-              <div className="con-val">{editMode ? <ET value={settings.contact.hours} onChange={v => updS("contact.hours", v)} /> : settings.contact.hours}</div>
-            </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 16 }}>
+            {[
+              { icon: "📸", label: "Instagram", urlKey: "instagram", labelKey: "instagram_label" },
+              { icon: "🎵", label: "TikTok", urlKey: "tiktok", labelKey: "tiktok_label" },
+              { icon: "📧", label: "Email", urlKey: "email", labelKey: null },
+              { icon: "🕐", label: "Hours", urlKey: null, labelKey: "hours" },
+            ].map(({ icon, label, urlKey, labelKey }) => (
+              <div key={label} style={{ background: "#fff", borderRadius: 20, padding: 24, border: "1px solid #fae0e0", textAlign: "center" }}>
+                <div style={{ fontSize: 32, marginBottom: 10 }}>{icon}</div>
+                <div style={{ fontSize: 11, color: "#b08080", marginBottom: 4, letterSpacing: 1, textTransform: "uppercase" }}>{label}</div>
+                {editMode ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {labelKey && <><div style={{ fontSize: 10, color: "#c09090" }}>Display text</div><ET value={settings.contact[labelKey]} onChange={v => updS(`contact.${labelKey}`, v)} /></>}
+                    {urlKey && urlKey !== "email" && <><div style={{ fontSize: 10, color: "#c09090", marginTop: 4 }}>URL</div><ET value={settings.contact[urlKey]} onChange={v => updS(`contact.${urlKey}`, v)} /></>}
+                    {urlKey === "email" && <ET value={settings.contact.email} onChange={v => updS("contact.email", v)} />}
+                  </div>
+                ) : (
+                  urlKey && urlKey !== "email" ? <a href={settings.contact[urlKey]} target="_blank" rel="noreferrer" style={{ fontSize: 14, fontWeight: 700, color: "#b86060", textDecoration: "none" }}>{settings.contact[labelKey]}</a>
+                  : urlKey === "email" ? <a href={`mailto:${settings.contact.email}`} style={{ fontSize: 14, fontWeight: 700, color: "#b86060", textDecoration: "none" }}>{settings.contact.email}</a>
+                  : <div style={{ fontSize: 14, fontWeight: 700, color: "#2a1818" }}>{settings.contact[labelKey]}</div>
+                )}
+              </div>
+            ))}
           </div>
-          <div className="con-note">{editMode ? <ET value={settings.contact.note} onChange={v => updS("contact.note", v)} multi /> : settings.contact.note}</div>
+          <div style={{ textAlign: "center", marginTop: 24, background: "#fceaea", borderRadius: 16, padding: "16px 22px", fontSize: 13, color: "#8a5858", lineHeight: 1.7 }}>
+            {editMode ? <ET value={settings.contact.note} onChange={v => updS("contact.note", v)} multi /> : settings.contact.note}
+          </div>
         </div>
       )}
 
-      {/* ORDERS */}
-      {section === "orders" && editMode && (
+      {/* ══ ORDERS ══ */}
+      {section === "orders" && isAdmin && editMode && (
         <div className="section">
-          <div className="orders-header">
-            <div><h2 className="sec-title" style={{ textAlign: "left", marginBottom: 4 }}>📋 Orders</h2><p style={{ fontSize: 13, color: "#a07070" }}>{orders.length} order{orders.length !== 1 ? "s" : ""} total · {orders.filter(o => o.status === "Pending Payment").length} pending</p></div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <h2 className="sec-title" style={{ textAlign: "left", marginBottom: 4 }}>📋 Orders</h2>
+              <p style={{ fontSize: 13, color: "#a07070" }}>{orders.length} total · {orders.filter(o => o.status === "Pending Payment").length} pending</p>
+            </div>
             {orders.length > 0 && <button className="btn-outline" style={{ fontSize: 12 }} onClick={() => { if (confirm("Clear all orders?")) saveOrders([]); }}>Clear all</button>}
           </div>
           {orders.length === 0
-            ? <div className="empty-orders">No orders yet.<br />When customers checkout, their orders appear here 🩷</div>
+            ? <div style={{ textAlign: "center", padding: "60px 20px", color: "#c09090", fontSize: 14, lineHeight: 2 }}>No orders yet.<br />Orders from customers appear here 🩷</div>
             : orders.map(o => (
-              <div key={o.id} className="order-card">
-                <div className="order-top">
-                  <div><div className="order-id">#{o.id.toUpperCase()}</div><div style={{ fontSize: 11, color: "#c09090" }}>{new Date(o.date).toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" })}</div></div>
-                  <span className="status-badge" style={{ background: (statusColor[o.status] || "#888") + "22", color: statusColor[o.status] || "#888" }}>{o.status}</span>
+              <div key={o.id} style={{ background: "#fff", borderRadius: 18, padding: 20, border: "1px solid #fae0e0", marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: "#b08080", fontFamily: "monospace" }}>#{o.id.toUpperCase()}</div>
+                    <div style={{ fontSize: 11, color: "#c09090" }}>{new Date(o.date).toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" })}</div>
+                  </div>
+                  <span style={{ borderRadius: 12, padding: "3px 12px", fontSize: 11, fontWeight: 700, background: (statusColor[o.status] || "#888") + "22", color: statusColor[o.status] || "#888" }}>{o.status}</span>
                 </div>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{o.customer.name}</div>
-                <div style={{ fontSize: 12, color: "#8a6060" }}>📞 {o.customer.phone}</div>
-                <div style={{ fontSize: 12, color: "#8a6060" }}>📍 {o.customer.address}</div>
+                <div style={{ fontSize: 12, color: "#8a6060" }}>📞 {o.customer.phone} · 📍 {o.customer.address}</div>
                 {o.customer.size && <div style={{ fontSize: 12, color: "#8a6060" }}>💅 Size: {o.customer.size}</div>}
                 {o.customer.note && <div style={{ fontSize: 12, color: "#8a6060" }}>📝 {o.customer.note}</div>}
-                <div style={{ fontSize: 12, color: "#7a5858", margin: "8px 0", lineHeight: 1.7 }}>{o.items.map(i => <span key={i.id} style={{ marginRight: 12 }}>{i.name} ×{i.qty}</span>)}</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#b86060" }}>{fmt(o.grand)} · {o.payMethod === "bank" ? "🏦 Bank Transfer" : "💚 TNG eWallet"}</div>
-                {o.proof && <img src={o.proof} alt="Payment proof" className="proof-thumb" onClick={() => setLightbox({ images: [o.proof], idx: 0 })} />}
-                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                  <select className="status-sel" value={o.status} onChange={e => updateOrderStatus(o.id, e.target.value)}>
+                <div style={{ fontSize: 12, color: "#7a5858", margin: "8px 0" }}>{o.items.map(i => `${i.name} ×${i.qty}`).join("  ·  ")}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#b86060" }}>{fmt(o.grand)} · {o.payMethod === "bank" ? "🏦 Bank" : "💚 TNG"}</div>
+                {o.proof && <img src={o.proof} alt="proof" style={{ width: 80, height: 80, borderRadius: 10, objectFit: "cover", cursor: "zoom-in", marginTop: 8 }} onClick={() => setLightbox({ images: [o.proof], idx: 0 })} />}
+                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
+                  <select value={o.status} onChange={e => updateOrderStatus(o.id, e.target.value)} style={{ border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "6px 10px", fontSize: 12, fontFamily: "inherit", background: "#fffaf8", outline: "none", cursor: "pointer" }}>
                     {["Pending Payment", "Payment Verified", "Shipped", "Completed", "Cancelled"].map(s => <option key={s}>{s}</option>)}
                   </select>
-                  <button style={{ background: "none", border: "none", color: "#ccc", cursor: "pointer", fontSize: 13, padding: "6px 10px", borderRadius: 8 }} onClick={() => { if (confirm("Delete this order?")) deleteOrder(o.id); }}>🗑 Delete</button>
+                  <button onClick={() => { if (confirm("Delete?")) deleteOrder(o.id); }} style={{ background: "none", border: "none", color: "#ccc", cursor: "pointer", fontSize: 13, padding: "6px 10px", borderRadius: 8 }}>🗑 Delete</button>
                 </div>
               </div>
             ))}
         </div>
       )}
 
-      <div className="divider" />
-      <footer className="footer">
-        <strong>May Nails</strong><br />
+      <div style={{ height: 1, background: "linear-gradient(to right,transparent,#f0d0d0,transparent)", maxWidth: 1100, margin: "0 auto" }} />
+      <footer style={{ background: "#2a1818", color: "#c09090", textAlign: "center", padding: "30px 20px", fontSize: 13, lineHeight: 2.2 }}>
+        <strong style={{ color: "#f0b0b0", fontStyle: "italic", fontSize: 15, letterSpacing: 2 }}>May Nails</strong><br />
         Press-on nails, shipped across Malaysia 🩷<br />
         <span style={{ fontSize: 12, opacity: 0.6 }}>© 2025 May Nails · All rights reserved</span>
       </footer>
