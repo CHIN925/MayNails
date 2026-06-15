@@ -61,12 +61,12 @@ const fmt = (n) => `RM ${Number(n).toFixed(2)}`;
 
 // ─── Default data ─────────────────────────────────────────────────────────────
 const DEFAULT_PRODUCTS = [
-  { id: "p1", name: "Creamy Moonlight", desc: "Soft milky white with a pearl shimmer — the ultimate everyday set.", price: 28, tag: "Best Seller", sizes: "XS · S · M · L · XL", images: [] },
-  { id: "p2", name: "Rose Velvet", desc: "Dusty rose matte finish, velvety texture with a romantic feel.", price: 32, tag: "New", sizes: "XS · S · M · L · XL", images: [] },
-  { id: "p3", name: "Midnight Aurora", desc: "Deep navy with aurora glitter — turns heads under every light.", price: 35, tag: "Limited", sizes: "XS · S · M · L · XL", images: [] },
-  { id: "p4", name: "Classic French", desc: "Timeless white-tip French tips. Never goes out of style.", price: 25, tag: "", sizes: "XS · S · M · L · XL", images: [] },
-  { id: "p5", name: "Matcha Latte", desc: "Soft sage green with a glazed finish — fresh and understated.", price: 30, tag: "New", sizes: "XS · S · M · L · XL", images: [] },
-  { id: "p6", name: "Candy Gradient", desc: "Pink-to-orange ombre, sweet and bold — summer's favourite.", price: 33, tag: "Limited", sizes: "XS · S · M · L · XL", images: [] },
+  { id: "p1", name: "Creamy Moonlight", desc: "Soft milky white with a pearl shimmer — the ultimate everyday set.", price: 28, tag: "Best Seller", sizes: "XS · S · M · L · XL", images: [], stock: 10 },
+  { id: "p2", name: "Rose Velvet", desc: "Dusty rose matte finish, velvety texture with a romantic feel.", price: 32, tag: "New", sizes: "XS · S · M · L · XL", images: [], stock: 10 },
+  { id: "p3", name: "Midnight Aurora", desc: "Deep navy with aurora glitter — turns heads under every light.", price: 35, tag: "Limited", sizes: "XS · S · M · L · XL", images: [], stock: 10 },
+  { id: "p4", name: "Classic French", desc: "Timeless white-tip French tips. Never goes out of style.", price: 25, tag: "", sizes: "XS · S · M · L · XL", images: [], stock: 10 },
+  { id: "p5", name: "Matcha Latte", desc: "Soft sage green with a glazed finish — fresh and understated.", price: 30, tag: "New", sizes: "XS · S · M · L · XL", images: [], stock: 10 },
+  { id: "p6", name: "Candy Gradient", desc: "Pink-to-orange ombre, sweet and bold — summer's favourite.", price: 33, tag: "Limited", sizes: "XS · S · M · L · XL", images: [], stock: 10 },
 ];
 const DEFAULT_GALLERY = [
   { id: "g1", image: null, label: "Creamy Moonlight", bg: "#f5f0f0" },
@@ -78,7 +78,8 @@ const DEFAULT_GALLERY = [
 ];
 const DEFAULT_SETTINGS = {
   hero: { tagline: "Press-on Nails · Swap Anytime · Salon-perfect Every Day", subtext: "No nail tech needed — gorgeous nails in 5 minutes, at home." },
-  shipping: { free_threshold: 80, standard: { label: "Pos Laju", price: 7, days: "2–4 working days" }, express: { label: "Same-day (Klang Valley)", price: 18, days: "Same day" } },
+  shipping: { free_threshold: 80, west: { label: "West Malaysia", price: 7, days: "2–4 working days" }, east: { label: "East Malaysia (Sabah/Sarawak)", price: 12, days: "4–7 working days" }, express: { label: "Same-day (Klang Valley)", price: 18, days: "Same day" } },
+  shopSubtitle: "Each set includes 10 nails (thumb to pinky). Order your preferred size using the size chart above.",
   payment: { bank_name: "Maybank", bank_acc: "1234 5678 9012", bank_holder: "May Nails", tng_number: "+60 12-345 6789", tng_qr: null },
   contact: { instagram: "https://instagram.com/maynails.my", instagram_label: "@maynails.my", tiktok: "https://tiktok.com/@maynails", tiktok_label: "@maynails", email: "hello@maynails.my", hours: "Mon–Sun, 10am–10pm", note: "We ship within 24 hours of your order. DM us on Instagram or TikTok for any questions 🩷" },
   faq: [
@@ -171,13 +172,13 @@ function AdminLogin({ onSuccess, onClose }) {
 }
 
 // ─── Checkout Modal ───────────────────────────────────────────────────────────
-function CheckoutModal({ cart, total, shipping, settings, onClose, onOrderPlaced }) {
+function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, onClose, onOrderPlaced }) {
   const [step, setStep] = useState(1);
   const [payMethod, setPayMethod] = useState("bank");
   const [form, setForm] = useState({ name: "", phone: "", address: "", size: "", note: "" });
   const [proof, setProof] = useState(null);
   const proofRef = useRef();
-  const grand = total + shipping;
+  const grand = total + shippingFee;
   const submitOrder = () => {
     const order = { id: uid(), date: new Date().toISOString(), customer: form, items: cart, subtotal: total, shipping, grand, payMethod, proof, status: "Pending Payment" };
     onOrderPlaced(order);
@@ -195,7 +196,7 @@ function CheckoutModal({ cart, total, shipping, settings, onClose, onOrderPlaced
           {step === 1 && <>
             <div style={{ background: "#fdf6f6", borderRadius: 14, padding: 14, marginBottom: 18 }}>
               {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5a3535", padding: "3px 0" }}><span>{i.name} × {i.qty}</span><span>RM {(i.price * i.qty).toFixed(2)}</span></div>)}
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5a3535", padding: "6px 0", borderTop: "1px dashed #f0d0d0", marginTop: 6 }}><span>Shipping</span><span>{shipping === 0 ? "Free" : fmt(shipping)}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5a3535", padding: "6px 0", borderTop: "1px dashed #f0d0d0", marginTop: 6 }}><span>Shipping ({shippingZone})</span><span>{shippingFee === 0 ? "Free" : fmt(shippingFee)}</span></div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 700, color: "#b86060" }}><span>Total</span><span>{fmt(grand)}</span></div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -305,13 +306,29 @@ function ProductCard({ p, editMode, onUpdate, onDelete, onAddToCart, onLightbox 
       <div style={{ padding: "14px 18px 18px" }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: "#2a1818", marginBottom: 6 }}>{editMode ? <ET value={p.name} onChange={v => onUpdate(p.id, "name", v)} /> : p.name}</div>
         <div style={{ fontSize: 12, color: "#8a6a6a", marginBottom: 10, lineHeight: 1.65 }}>{editMode ? <ET value={p.desc} onChange={v => onUpdate(p.id, "desc", v)} multi /> : p.desc}</div>
-        <div style={{ fontSize: 11, color: "#c09090", marginBottom: 14 }}>Sizes: {editMode ? <ET value={p.sizes} onChange={v => onUpdate(p.id, "sizes", v)} /> : p.sizes}</div>
+        <div style={{ fontSize: 11, color: "#c09090", marginBottom: 10 }}>Sizes: {editMode ? <ET value={p.sizes} onChange={v => onUpdate(p.id, "sizes", v)} /> : p.sizes}</div>
+        {/* Stock */}
+        {editMode ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <span style={{ fontSize: 11, color: "#b08080" }}>Stock:</span>
+            <ET value={String(p.stock ?? 0)} onChange={v => onUpdate(p.id, "stock", Number(v))} />
+          </div>
+        ) : (
+          <div style={{ marginBottom: 14 }}>
+            {(p.stock ?? 0) === 0
+              ? <span style={{ fontSize: 11, fontWeight: 700, color: "#ef4444", background: "#fff0f0", padding: "2px 10px", borderRadius: 10 }}>Sold Out</span>
+              : (p.stock ?? 0) <= 3
+              ? <span style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", background: "#fffbeb", padding: "2px 10px", borderRadius: 10 }}>Only {p.stock} left!</span>
+              : <span style={{ fontSize: 11, color: "#10b981" }}>✓ In stock ({p.stock} left)</span>}
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 20, fontWeight: 700, color: "#b86060" }}>
             <span style={{ fontSize: 12 }}>RM </span>
             {editMode ? <ET value={String(p.price)} onChange={v => onUpdate(p.id, "price", Number(v))} /> : p.price}
           </div>
-          <button onClick={() => onAddToCart(p)} style={{ background: "#b86060", color: "#fff", border: "none", borderRadius: "50%", width: 36, height: 36, fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+          <button onClick={() => onAddToCart(p)} disabled={(p.stock ?? 0) === 0}
+            style={{ background: (p.stock ?? 0) === 0 ? "#ddd" : "#b86060", color: "#fff", border: "none", borderRadius: "50%", width: 36, height: 36, fontSize: 22, cursor: (p.stock ?? 0) === 0 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
         </div>
       </div>
     </div>
@@ -335,13 +352,14 @@ export default function MayNails() {
   const [cart, setCart] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkout, setCheckout] = useState(false);
+  const [shippingZone, setShippingZone] = useState("west"); // "west" | "east"
   const [toast, setToast] = useState("");
   const [lightbox, setLightbox] = useState(null);
 
   useEffect(() => {
     (async () => {
       const [p, g, s, o] = await Promise.all([dbLoad("products"), dbLoad("gallery"), dbLoad("settings"), dbLoad("orders")]);
-      if (p) setProducts(p.map(prod => ({ ...prod, images: prod.images || [] })));
+      if (p) setProducts(p.map(prod => ({ ...prod, images: prod.images || [], stock: prod.stock ?? 10 })));
       if (g) setGallery(g);
       if (s) setSettings(prev => ({ ...prev, ...s, guide: { ...prev.guide, ...(s.guide || {}) }, contact: { ...prev.contact, ...(s.contact || {}) } }));
       if (o) setOrders(o);
@@ -369,12 +387,14 @@ export default function MayNails() {
   const removeFromCart = id => setCart(p => p.filter(i => i.id !== id));
   const adjustQty = (id, d) => setCart(p => p.map(i => i.id === id ? { ...i, qty: Math.max(1, i.qty + d) } : i));
   const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
-  const shippingFee = cartTotal >= settings.shipping.free_threshold ? 0 : settings.shipping.standard.price;
+  const zoneRate = shippingZone === "east" ? settings.shipping.east.price : settings.shipping.west.price;
+  const shippingFee = cartTotal >= settings.shipping.free_threshold ? 0 : zoneRate;
+  const zoneLabel = shippingZone === "east" ? settings.shipping.east.label : settings.shipping.west.label;
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
   // Products
   const updProduct = (id, key, val) => saveProducts(products.map(p => p.id === id ? { ...p, [key]: val } : p));
-  const addProduct = () => saveProducts([...products, { id: uid(), name: "New Style", desc: "Click to edit description", price: 30, tag: "", sizes: "XS · S · M · L · XL", images: [] }]);
+  const addProduct = () => saveProducts([...products, { id: uid(), name: "New Style", desc: "Click to edit description", price: 30, tag: "", sizes: "XS · S · M · L · XL", images: [], stock: 10 }]);
   const delProduct = id => saveProducts(products.filter(p => p.id !== id));
 
   // Gallery
@@ -501,7 +521,7 @@ export default function MayNails() {
         </div>
       </>}
 
-      {checkout && <CheckoutModal cart={cart} total={cartTotal} shipping={shippingFee} settings={settings} onClose={() => setCheckout(false)} onOrderPlaced={order => { placeOrder(order); setCheckout(false); showToast("Order placed! 🩷"); }} />}
+      {checkout && <CheckoutModal cart={cart} total={cartTotal} shippingFee={shippingFee} shippingZone={zoneLabel} settings={settings} onClose={() => setCheckout(false)} onOrderPlaced={order => { placeOrder(order); setCheckout(false); showToast("Order placed! 🩷"); }} />}
 
       {/* ══ HOME ══ */}
       {section === "home" && <>
@@ -538,19 +558,50 @@ export default function MayNails() {
       {section === "shop" && (
         <div className="section">
           <h2 className="sec-title">Our <span>Collection</span></h2>
-          <p className="sec-sub">Each set includes 10 nails (thumb to pinky) + spare sizes.</p>
+          <p className="sec-sub">{editMode ? <ET value={settings.shopSubtitle || "Each set includes 10 nails (thumb to pinky)."} onChange={v => updS("shopSubtitle", v)} multi /> : (settings.shopSubtitle || "Each set includes 10 nails (thumb to pinky).")}</p>
           {/* Shipping box */}
           <div style={{ background: "linear-gradient(135deg,#fff8f8,#fce8e8)", borderRadius: 20, padding: "24px 28px", border: "1px solid #f5d0d0", marginBottom: 40 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: "#b86060", marginBottom: 14 }}>📦 Shipping</div>
-            {[
-              [null, <>Free shipping on orders over RM {editMode ? <ET value={String(settings.shipping.free_threshold)} onChange={v => updS("shipping.free_threshold", Number(v))} /> : settings.shipping.free_threshold} <span style={{ background: "#b86060", color: "#fff", borderRadius: 10, fontSize: 10, padding: "2px 8px", marginLeft: 4 }}>FREE</span></>],
-              [<>RM {editMode ? <ET value={String(settings.shipping.standard.price)} onChange={v => updS("shipping.standard.price", Number(v))} /> : settings.shipping.standard.price}</>, <>{editMode ? <ET value={settings.shipping.standard.label} onChange={v => updS("shipping.standard.label", v)} /> : settings.shipping.standard.label} ({editMode ? <ET value={settings.shipping.standard.days} onChange={v => updS("shipping.standard.days", v)} /> : settings.shipping.standard.days})</>],
-              [<>RM {editMode ? <ET value={String(settings.shipping.express.price)} onChange={v => updS("shipping.express.price", Number(v))} /> : settings.shipping.express.price}</>, <>{editMode ? <ET value={settings.shipping.express.label} onChange={v => updS("shipping.express.label", v)} /> : settings.shipping.express.label} ({editMode ? <ET value={settings.shipping.express.days} onChange={v => updS("shipping.express.days", v)} /> : settings.shipping.express.days})</>],
-            ].map(([price, label], i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: i < 2 ? "1px dashed #f0c0c0" : "none", fontSize: 13, color: "#5a3535" }}>
-                <span>{label}</span>{price && <span style={{ fontWeight: 700, color: "#b86060" }}>{price}</span>}
+            {/* Zone selector for customers */}
+            {!editMode && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: "#8a6060", marginBottom: 8 }}>Select your region:</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {["west","east"].map(z => (
+                    <button key={z} onClick={() => setShippingZone(z)}
+                      style={{ flex: 1, padding: "8px 12px", borderRadius: 12, border: `1.5px solid ${shippingZone === z ? "#b86060" : "#f0d0d0"}`, background: shippingZone === z ? "#fceaea" : "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: 13, color: shippingZone === z ? "#b86060" : "#5a3535", fontWeight: shippingZone === z ? 700 : 400, transition: "all .15s" }}>
+                      {z === "west" ? "🇲🇾 West Malaysia" : "🌴 East Malaysia"}
+                    </button>
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
+            {/* Shipping rates */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px dashed #f0c0c0", fontSize: 13, color: "#5a3535" }}>
+                <span>Free shipping on orders over RM {editMode ? <ET value={String(settings.shipping.free_threshold)} onChange={v => updS("shipping.free_threshold", Number(v))} /> : settings.shipping.free_threshold}
+                  <span style={{ background: "#b86060", color: "#fff", borderRadius: 10, fontSize: 10, padding: "2px 8px", marginLeft: 6 }}>FREE</span></span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px dashed #f0c0c0", fontSize: 13, color: "#5a3535" }}>
+                <span>🇲🇾 {editMode ? <ET value={settings.shipping.west.label} onChange={v => updS("shipping.west.label", v)} /> : settings.shipping.west.label} ({editMode ? <ET value={settings.shipping.west.days} onChange={v => updS("shipping.west.days", v)} /> : settings.shipping.west.days})</span>
+                <span style={{ fontWeight: 700, color: "#b86060" }}>RM {editMode ? <ET value={String(settings.shipping.west.price)} onChange={v => updS("shipping.west.price", Number(v))} /> : settings.shipping.west.price}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px dashed #f0c0c0", fontSize: 13, color: "#5a3535" }}>
+                <span>🌴 {editMode ? <ET value={settings.shipping.east.label} onChange={v => updS("shipping.east.label", v)} /> : settings.shipping.east.label} ({editMode ? <ET value={settings.shipping.east.days} onChange={v => updS("shipping.east.days", v)} /> : settings.shipping.east.days})</span>
+                <span style={{ fontWeight: 700, color: "#b86060" }}>RM {editMode ? <ET value={String(settings.shipping.east.price)} onChange={v => updS("shipping.east.price", Number(v))} /> : settings.shipping.east.price}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", fontSize: 13, color: "#5a3535" }}>
+                <span>⚡ {editMode ? <ET value={settings.shipping.express.label} onChange={v => updS("shipping.express.label", v)} /> : settings.shipping.express.label} ({editMode ? <ET value={settings.shipping.express.days} onChange={v => updS("shipping.express.days", v)} /> : settings.shipping.express.days})</span>
+                <span style={{ fontWeight: 700, color: "#b86060" }}>RM {editMode ? <ET value={String(settings.shipping.express.price)} onChange={v => updS("shipping.express.price", Number(v))} /> : settings.shipping.express.price}</span>
+              </div>
+            </div>
+            {/* Selected zone summary */}
+            {!editMode && (
+              <div style={{ marginTop: 12, background: "#fff", borderRadius: 12, padding: "10px 14px", fontSize: 13, color: "#5a3535", border: "1px solid #f0d0d0" }}>
+                Your shipping: <strong style={{ color: "#b86060" }}>{cartTotal >= settings.shipping.free_threshold ? "FREE 🎉" : fmt(zoneRate)}</strong>
+                {cartTotal < settings.shipping.free_threshold && <span style={{ color: "#c09090", fontSize: 11, marginLeft: 8 }}>Add {fmt(settings.shipping.free_threshold - cartTotal)} more for free shipping</span>}
+              </div>
+            )}
           </div>
           {/* Products */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 20 }}>
