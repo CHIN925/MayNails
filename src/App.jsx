@@ -361,7 +361,7 @@ export default function MayNails() {
       const [p, g, s, o] = await Promise.all([dbLoad("products"), dbLoad("gallery"), dbLoad("settings"), dbLoad("orders")]);
       if (p) setProducts(p.map(prod => ({ ...prod, images: prod.images || [], stock: prod.stock ?? 10 })));
       if (g) setGallery(g);
-      if (s) setSettings(prev => ({ ...prev, ...s, guide: { ...prev.guide, ...(s.guide || {}) }, contact: { ...prev.contact, ...(s.contact || {}) } }));
+      if (s) setSettings(prev => ({ ...prev, ...s, shipping: { ...prev.shipping, ...(s.shipping || {}), west: { ...prev.shipping.west, ...(s.shipping?.west || {}) }, east: { ...prev.shipping.east, ...(s.shipping?.east || {}) }, express: { ...prev.shipping.express, ...(s.shipping?.express || {}) } }, guide: { ...prev.guide, ...(s.guide || {}) }, contact: { ...prev.contact, ...(s.contact || {}) } }));
       if (o) setOrders(o);
       setLoaded(true);
     })();
