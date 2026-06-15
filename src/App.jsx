@@ -6,10 +6,10 @@ const ADMIN_PASSWORD = "maynails2025";
 
 // ─── Google Sheets config ────────────────────────────────────────────────────
 // Replace SHEET_ID with your Google Sheet ID after setup
-const SHEET_ID = "YOUR_SHEET_ID_HERE";
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbwM8TveD4yFk0V2YrG1FwwaI5B8aIlMzg9_DiX0az0X2t_ACzwXALq9WRn6Ap7_4jBE1w/exec";
 const SHEET_NAME = "Orders";
 async function appendToSheet(order) {
-  if (SHEET_ID === "YOUR_SHEET_ID_HERE") return;
+  
   try {
     const row = [
       new Date(order.date).toLocaleString("en-MY"),
@@ -26,7 +26,7 @@ async function appendToSheet(order) {
       order.status,
       order.customer.note || "",
     ];
-    await fetch(`https://script.google.com/macros/s/${SHEET_ID}/exec`, {
+    await fetch(SHEET_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ row, sheet: SHEET_NAME }),
