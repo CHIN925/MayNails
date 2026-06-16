@@ -239,7 +239,7 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, onClo
               </div>
               <input ref={proofRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => setProof(ev.target.result); r.readAsDataURL(f); }} />
             </div>
-            <div style={{ background: "#fceaea", borderRadius: 12, padding: "10px 14px", fontSize: 12, color: "#8a5858", marginTop: 14, lineHeight: 1.6 }}>📩 After confirming, please send your payment screenshot to us via Instagram or TikTok DM.</div>
+
             <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
               <button onClick={() => setStep(1)} style={{ flex: 1, background: "transparent", color: "#b86060", border: "1.5px solid #b86060", borderRadius: 30, padding: 11, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
               <button onClick={() => { if (!proof) { alert("Please upload payment screenshot first!"); return; } submitOrder(); }} style={{ flex: 2, background: proof ? "#b86060" : "#ccc", color: "#fff", border: "none", borderRadius: 30, padding: 12, fontSize: 14, cursor: "pointer", fontFamily: "inherit", transition: "background .2s" }}>Confirm Order ✓</button>
