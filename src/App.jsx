@@ -231,7 +231,7 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, onClo
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 18, fontWeight: 700, color: "#b86060", marginTop: 10 }}><span>Amount</span><span>{fmt(grand)}</span></div>
             </div>
             <div style={{ marginTop: 16 }}>
-              <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px", display: "block", marginBottom: 6 }}>Upload payment screenshot <span style={{ color: "#c09090", textTransform: "none", fontSize: 12 }}>(optional)</span></label>
+              <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px", display: "block", marginBottom: 6 }}>Upload payment screenshot <span style={{ color: "#c09090", textTransform: "none", fontSize: 12 }}></span></label>
               <div onClick={() => proofRef.current.click()} style={{ border: `2px dashed ${proof ? "#10b981" : "#e0c0c0"}`, borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", minHeight: 100, background: proof ? "#f0fdf4" : "#fffaf8", transition: "all .2s" }}>
                 {proof
                   ? <><img src={proof} alt="proof" style={{ width: "100%", maxHeight: 200, objectFit: "contain", borderRadius: 8 }} /><span style={{ fontSize: 12, color: "#10b981", marginTop: 6 }}>✓ Screenshot uploaded! You can now confirm.</span></>
@@ -239,7 +239,7 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, onClo
               </div>
               <input ref={proofRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => setProof(ev.target.result); r.readAsDataURL(f); }} />
             </div>
-            <div style={{ background: "#fceaea", borderRadius: 12, padding: "10px 14px", fontSize: 12, color: "#8a5858", marginTop: 14, lineHeight: 1.6 }}>📩 After confirming, please send your payment screenshot to us via Instagram or TikTok DM.</div>
+            <div style={{ background: "#fceaea", borderRadius: 12, padding: "10px 14px", fontSize: 12, color: "#8a5858", marginTop: 14, lineHeight: 1.6 }}>
             <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
               <button onClick={() => setStep(1)} style={{ flex: 1, background: "transparent", color: "#b86060", border: "1.5px solid #b86060", borderRadius: 30, padding: 11, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
               <button onClick={() => { if (!proof) { alert("Please upload payment screenshot first!"); return; } submitOrder(); }} style={{ flex: 2, background: proof ? "#b86060" : "#ccc", color: "#fff", border: "none", borderRadius: 30, padding: 12, fontSize: 14, cursor: "pointer", fontFamily: "inherit", transition: "background .2s" }}>Confirm Order ✓</button>
