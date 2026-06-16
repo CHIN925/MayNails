@@ -180,7 +180,7 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, onClo
   const proofRef = useRef();
   const grand = total + shippingFee;
   const submitOrder = () => {
-    const order = { id: uid(), date: new Date().toISOString(), customer: form, items: cart, subtotal: total, shipping, grand, payMethod, proof, status: "Pending Payment" };
+    const order = { id: uid(), date: new Date().toISOString(), customer: form, items: cart, subtotal: total, shippingFee, grand, payMethod, proof, status: "Pending Payment" };
     onOrderPlaced(order);
     appendToSheet(order);
     setStep(3);
