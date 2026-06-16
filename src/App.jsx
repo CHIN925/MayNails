@@ -78,7 +78,7 @@ const DEFAULT_GALLERY = [
 ];
 const DEFAULT_SETTINGS = {
   hero: { tagline: "Press-on Nails · Swap Anytime · Salon-perfect Every Day", subtext: "No nail tech needed — gorgeous nails in 5 minutes, at home." },
-  shipping: { free_threshold: 80, west: { label: "West Malaysia", price: 7, days: "2–4 working days" }, east: { label: "East Malaysia (Sabah/Sarawak)", price: 12, days: "4–7 working days" }, express: { label: "Same-day (Klang Valley)", price: 18, days: "Same day" } },
+  shipping: { free_threshold: 80, west: { label: "West Malaysia", price: 7, days: "2–4 working days" }, east: { label: "East Malaysia (Sabah/Sarawak)", price: 12, days: "4–7 working days" }, express: { label: "Same-day ", price: 18, days: "Same day" } },
   shopSubtitle: "Each set includes 10 nails (thumb to pinky). Order your preferred size using the size chart above.",
   payment: { bank_name: "Maybank", bank_acc: "1234 5678 9012", bank_holder: "May Nails", tng_number: "+60 12-345 6789", tng_qr: null },
   contact: { instagram: "https://instagram.com/maynails.my", instagram_label: "@maynails.my", tiktok: "https://tiktok.com/@maynails", tiktok_label: "@maynails", email: "hello@maynails.my", hours: "Mon–Sun, 10am–10pm", note: "We ship within 24 hours of your order. DM us on Instagram or TikTok for any questions 🩷" },
