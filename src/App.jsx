@@ -571,9 +571,9 @@ export default function MayNails() {
                 <div style={{ fontSize: 12, color: "#8a6060", marginBottom: 8 }}>Select delivery option:</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {[
-                    { key: "west", label: "🇲🇾 West Malaysia" },
-                    { key: "east", label: "🌴 East Malaysia" },
-                    { key: "sameday", label: "⚡ Same Day (KV)" },
+                    { key: "west", label: "West Malaysia" },
+                    { key: "east", label: "East Malaysia" },
+                    { key: "sameday", label: "Same Day" },
                   ].map(z => (
                     <button key={z.key} onClick={() => setShippingZone(z.key)}
                       style={{ flex: 1, minWidth: 100, padding: "8px 10px", borderRadius: 12, border: `1.5px solid ${shippingZone === z.key ? "#b86060" : "#f0d0d0"}`, background: shippingZone === z.key ? "#fceaea" : "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: 12, color: shippingZone === z.key ? "#b86060" : "#5a3535", fontWeight: shippingZone === z.key ? 700 : 400, transition: "all .15s" }}>
