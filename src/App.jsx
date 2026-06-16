@@ -177,6 +177,7 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, onClo
   const [payMethod, setPayMethod] = useState("bank");
   const [form, setForm] = useState({ name: "", phone: "", address: "", size: "", note: "" });
   const [proof, setProof] = useState(null);
+  const [proofReady, setProofReady] = useState(false);
   const proofRef = useRef();
   const grand = total + shippingFee;
   const submitOrder = () => {
@@ -232,16 +233,16 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, onClo
             </div>
             <div style={{ marginTop: 16 }}>
               <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px", display: "block", marginBottom: 6 }}>Upload payment screenshot <span style={{ color: "#ef4444" }}>*required</span></label>
-              <div onClick={() => proofRef.current.click()} style={{ border: `2px dashed ${proof ? "#10b981" : "#e0c0c0"}`, borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", minHeight: 100, background: proof ? "#f0fdf4" : "#fffaf8", transition: "all .2s" }}>
-                {proof
+              <div onClick={() => proofRef.current.click()} style={{ border: `2px dashed ${proofReady ? "#10b981" : "#e0c0c0"}`, borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", minHeight: 100, background: proofReady ? "#f0fdf4" : "#fffaf8", transition: "all .2s" }}>
+                {proofReady
                   ? <><img src={proof} alt="proof" style={{ width: "100%", maxHeight: 200, objectFit: "contain", borderRadius: 8 }} /><span style={{ fontSize: 12, color: "#10b981", marginTop: 6 }}>✓ Screenshot uploaded! You can now confirm.</span></>
                   : <><span style={{ fontSize: 28 }}>📸</span><span style={{ fontSize: 13, color: "#b08080" }}>Tap to upload payment screenshot</span><span style={{ fontSize: 11, color: "#c09090" }}>Upload first to enable Confirm button</span></>}
               </div>
-              <input ref={proofRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => { setProof(ev.target.result); }; r.onerror = () => alert("Upload failed, please try again."); r.readAsDataURL(f); e.target.value = ""; }} />
+              <input ref={proofRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files[0]; if (!f) return; setProofReady(false); const r = new FileReader(); r.onload = ev => { setProof(ev.target.result); setProofReady(true); }; r.onerror = () => alert("Upload failed, please try again."); r.readAsDataURL(f); e.target.value = ""; }} />
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
               <button onClick={() => setStep(1)} style={{ flex: 1, background: "transparent", color: "#b86060", border: "1.5px solid #b86060", borderRadius: 30, padding: 11, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
-              <button onClick={submitOrder} disabled={!proof} style={{ flex: 2, background: proof ? "#b86060" : "#ccc", color: "#fff", border: "none", borderRadius: 30, padding: 12, fontSize: 14, cursor: proof ? "pointer" : "not-allowed", fontFamily: "inherit", transition: "background .2s" }}>Confirm Order ✓</button>
+              <button onClick={submitOrder} disabled={!proofReady} style={{ flex: 2, background: proofReady ? "#b86060" : "#ccc", color: "#fff", border: "none", borderRadius: 30, padding: 12, fontSize: 14, cursor: proofReady ? "pointer" : "not-allowed", fontFamily: "inherit", transition: "background .2s" }}>Confirm Order ✓</button>
             </div>
           </>}
           {step === 3 && <div style={{ textAlign: "center", padding: "32px 0" }}>
@@ -570,9 +571,9 @@ export default function MayNails() {
                 <div style={{ fontSize: 12, color: "#8a6060", marginBottom: 8 }}>Select delivery option:</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {[
-                    { key: "west", label: "West Malaysia" },
-                    { key: "east", label: "East Malaysia" },
-                    { key: "sameday", label: "Same Day" },
+                    { key: "west", label: "🇲🇾 West Malaysia" },
+                    { key: "east", label: "🌴 East Malaysia" },
+                    { key: "sameday", label: "⚡ Same Day (KV)" },
                   ].map(z => (
                     <button key={z.key} onClick={() => setShippingZone(z.key)}
                       style={{ flex: 1, minWidth: 100, padding: "8px 10px", borderRadius: 12, border: `1.5px solid ${shippingZone === z.key ? "#b86060" : "#f0d0d0"}`, background: shippingZone === z.key ? "#fceaea" : "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: 12, color: shippingZone === z.key ? "#b86060" : "#5a3535", fontWeight: shippingZone === z.key ? 700 : 400, transition: "all .15s" }}>
