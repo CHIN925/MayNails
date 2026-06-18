@@ -48,10 +48,10 @@ async function dbLoad(key) {
 }
 async function dbSave(key, val) {
   try {
-    await fetch(`${SUPA_URL}/rest/v1/store_data?key=eq.${key}`, {
-      method: "PATCH",
-      headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify({ value: val })
+    await fetch(`${SUPA_URL}/rest/v1/store_data`, {
+      method: "POST",
+      headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ key, value: val })
     });
   } catch {}
 }
@@ -59,14 +59,24 @@ async function dbSave(key, val) {
 const uid = () => Math.random().toString(36).slice(2, 9);
 const fmt = (n) => `RM ${Number(n).toFixed(2)}`;
 
+// Simple hash for demo-level password storage (not cryptographically secure)
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) { hash = ((hash << 5) - hash) + str.charCodeAt(i); hash |= 0; }
+  return String(hash);
+}
+
 // ─── Default data ─────────────────────────────────────────────────────────────
+const SIZE_LIST = ["XS", "S", "M"];
+const makeStock = (n) => ({ XS: n, S: n, M: n });
+
 const DEFAULT_PRODUCTS = [
-  { id: "p1", name: "Creamy Moonlight", desc: "Soft milky white with a pearl shimmer — the ultimate everyday set.", price: 28, tag: "Best Seller", sizes: "XS · S · M · L · XL", images: [], stock: 10 },
-  { id: "p2", name: "Rose Velvet", desc: "Dusty rose matte finish, velvety texture with a romantic feel.", price: 32, tag: "New", sizes: "XS · S · M · L · XL", images: [], stock: 10 },
-  { id: "p3", name: "Midnight Aurora", desc: "Deep navy with aurora glitter — turns heads under every light.", price: 35, tag: "Limited", sizes: "XS · S · M · L · XL", images: [], stock: 10 },
-  { id: "p4", name: "Classic French", desc: "Timeless white-tip French tips. Never goes out of style.", price: 25, tag: "", sizes: "XS · S · M · L · XL", images: [], stock: 10 },
-  { id: "p5", name: "Matcha Latte", desc: "Soft sage green with a glazed finish — fresh and understated.", price: 30, tag: "New", sizes: "XS · S · M · L · XL", images: [], stock: 10 },
-  { id: "p6", name: "Candy Gradient", desc: "Pink-to-orange ombre, sweet and bold — summer's favourite.", price: 33, tag: "Limited", sizes: "XS · S · M · L · XL", images: [], stock: 10 },
+  { id: "p1", name: "Creamy Moonlight", desc: "Soft milky white with a pearl shimmer — the ultimate everyday set.", price: 28, tag: "Best Seller", images: [], sizeStock: makeStock(10) },
+  { id: "p2", name: "Rose Velvet", desc: "Dusty rose matte finish, velvety texture with a romantic feel.", price: 32, tag: "New", images: [], sizeStock: makeStock(10) },
+  { id: "p3", name: "Midnight Aurora", desc: "Deep navy with aurora glitter — turns heads under every light.", price: 35, tag: "Limited", images: [], sizeStock: makeStock(10) },
+  { id: "p4", name: "Classic French", desc: "Timeless white-tip French tips. Never goes out of style.", price: 25, tag: "", images: [], sizeStock: makeStock(10) },
+  { id: "p5", name: "Matcha Latte", desc: "Soft sage green with a glazed finish — fresh and understated.", price: 30, tag: "New", images: [], sizeStock: makeStock(10) },
+  { id: "p6", name: "Candy Gradient", desc: "Pink-to-orange ombre, sweet and bold — summer's favourite.", price: 33, tag: "Limited", images: [], sizeStock: makeStock(10) },
 ];
 const DEFAULT_GALLERY = [
   { id: "g1", image: null, label: "Creamy Moonlight", bg: "#f5f0f0" },
@@ -78,7 +88,7 @@ const DEFAULT_GALLERY = [
 ];
 const DEFAULT_SETTINGS = {
   hero: { tagline: "Press-on Nails · Swap Anytime · Salon-perfect Every Day", subtext: "No nail tech needed — gorgeous nails in 5 minutes, at home." },
-  shipping: { free_threshold: 80, west: { label: "West Malaysia", price: 7, days: "2–4 working days" }, east: { label: "East Malaysia (Sabah/Sarawak)", price: 12, days: "4–7 working days" }, express: { label: "Same-day (Klang Valley)", price: 18, days: "Same day" } },
+  shipping: { free_threshold: 80, west: { label: "West Malaysia", price: 7, days: "2–4 working days" }, east: { label: "East Malaysia (Sabah/Sarawak)", price: 12, days: "4–7 working days" }, express: { label: "Same Day", price: 18, days: "Via Lalamove, same day" } },
   shopSubtitle: "Each set includes 10 nails (thumb to pinky). Order your preferred size using the size chart above.",
   payment: { bank_name: "Maybank", bank_acc: "1234 5678 9012", bank_holder: "May Nails", tng_number: "+60 12-345 6789", tng_qr: null },
   contact: { instagram: "https://instagram.com/maynails.my", instagram_label: "@maynails.my", tiktok: "https://tiktok.com/@maynails", tiktok_label: "@maynails", email: "hello@maynails.my", hours: "Mon–Sun, 10am–10pm", note: "We ship within 24 hours of your order. DM us on Instagram or TikTok for any questions 🩷" },
@@ -148,6 +158,142 @@ function Lightbox({ images, startIdx, onClose }) {
 }
 
 // ─── Admin Login Modal ────────────────────────────────────────────────────────
+// ─── Customer Account Modal (Register / Login) ────────────────────────────────
+function CustomerAuthModal({ onSuccess, onClose }) {
+  const [mode, setMode] = useState("login"); // "login" | "register" | "forgot" | "reset"
+  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "" });
+  const [resetForm, setResetForm] = useState({ email: "", phone: "", newPassword: "" });
+  const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    setErr("");
+    if (!form.email || !form.password) { setErr("Please fill in email and password."); return; }
+    if (mode === "register" && !form.name) { setErr("Please enter your name."); return; }
+    setLoading(true);
+    const customers = (await dbLoad("customers")) || [];
+    const emailLower = form.email.trim().toLowerCase();
+
+    if (mode === "register") {
+      if (customers.find(c => c.email === emailLower)) { setErr("An account with this email already exists."); setLoading(false); return; }
+      if (!form.phone) { setErr("Phone number is required (used for password reset)."); setLoading(false); return; }
+      const newCustomer = { id: uid(), name: form.name, email: emailLower, phone: form.phone, passwordHash: simpleHash(form.password), cart: [], createdAt: new Date().toISOString() };
+      const next = [...customers, newCustomer];
+      await dbSave("customers", next);
+      setLoading(false);
+      onSuccess(newCustomer);
+    } else {
+      const found = customers.find(c => c.email === emailLower && c.passwordHash === simpleHash(form.password));
+      setLoading(false);
+      if (!found) { setErr("Incorrect email or password."); return; }
+      onSuccess(found);
+    }
+  };
+
+  const submitReset = async () => {
+    setErr(""); setMsg("");
+    if (!resetForm.email || !resetForm.phone || !resetForm.newPassword) { setErr("Please fill in all fields."); return; }
+    if (resetForm.newPassword.length < 4) { setErr("New password must be at least 4 characters."); return; }
+    setLoading(true);
+    const customers = (await dbLoad("customers")) || [];
+    const emailLower = resetForm.email.trim().toLowerCase();
+    const phoneClean = resetForm.phone.replace(/\s|-/g, "");
+    const idx = customers.findIndex(c => c.email === emailLower && c.phone.replace(/\s|-/g, "") === phoneClean);
+    if (idx === -1) { setLoading(false); setErr("No account found matching that email and phone number."); return; }
+    const next = customers.map((c, i) => i === idx ? { ...c, passwordHash: simpleHash(resetForm.newPassword) } : c);
+    await dbSave("customers", next);
+    setLoading(false);
+    setMsg("Password reset! You can now log in with your new password.");
+    setForm(f => ({ ...f, email: resetForm.email, password: "" }));
+    setTimeout(() => { setMode("login"); setMsg(""); }, 1800);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: "#fffaf8", borderRadius: 24, width: "100%", maxWidth: 380, overflow: "hidden" }}>
+        <div style={{ padding: "20px 24px", borderBottom: "1px solid #fae0e0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ color: "#b86060", fontStyle: "italic", fontSize: 18 }}>{mode === "login" ? "Welcome Back 🩷" : mode === "register" ? "Create Account 🩷" : "Reset Password 🔑"}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#b86060" }}>✕</button>
+        </div>
+        <div style={{ padding: "20px 24px" }}>
+          {mode !== "forgot" && (
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              {["login", "register"].map(m => (
+                <button key={m} onClick={() => { setMode(m); setErr(""); setMsg(""); }} style={{ flex: 1, padding: 9, borderRadius: 12, border: `1.5px solid ${mode === m ? "#b86060" : "#f0d0d0"}`, background: mode === m ? "#fceaea" : "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: 13, color: mode === m ? "#b86060" : "#5a3535", fontWeight: mode === m ? 700 : 400 }}>
+                  {m === "login" ? "Log In" : "Sign Up"}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {mode !== "forgot" ? (
+            <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {mode === "register" && (
+                  <div>
+                    <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>Name</label>
+                    <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={{ width: "100%", border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff", marginTop: 4 }} />
+                  </div>
+                )}
+                <div>
+                  <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>Email</label>
+                  <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} style={{ width: "100%", border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff", marginTop: 4 }} />
+                </div>
+                {mode === "register" && (
+                  <div>
+                    <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>Phone</label>
+                    <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="Used for password reset" style={{ width: "100%", border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff", marginTop: 4 }} />
+                  </div>
+                )}
+                <div>
+                  <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>Password</label>
+                  <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} onKeyDown={e => e.key === "Enter" && submit()} style={{ width: "100%", border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff", marginTop: 4 }} />
+                </div>
+              </div>
+              {mode === "login" && (
+                <div style={{ textAlign: "right", marginTop: 8 }}>
+                  <button onClick={() => { setMode("forgot"); setErr(""); setMsg(""); }} style={{ background: "none", border: "none", color: "#b86060", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>Forgot password?</button>
+                </div>
+              )}
+              {err && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 10 }}>{err}</div>}
+              <button onClick={submit} disabled={loading} style={{ width: "100%", marginTop: 16, background: "#b86060", color: "#fff", border: "none", borderRadius: 30, padding: 12, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: loading ? 0.6 : 1 }}>
+                {loading ? "Please wait…" : mode === "login" ? "Log In" : "Create Account"}
+              </button>
+            </>
+          ) : (
+            <>
+              <p style={{ fontSize: 12, color: "#8a6060", marginBottom: 14, lineHeight: 1.6 }}>Enter your email and phone number used at registration to set a new password.</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>Email</label>
+                  <input type="email" value={resetForm.email} onChange={e => setResetForm(f => ({ ...f, email: e.target.value }))} style={{ width: "100%", border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff", marginTop: 4 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>Phone</label>
+                  <input value={resetForm.phone} onChange={e => setResetForm(f => ({ ...f, phone: e.target.value }))} style={{ width: "100%", border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff", marginTop: 4 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>New Password</label>
+                  <input type="password" value={resetForm.newPassword} onChange={e => setResetForm(f => ({ ...f, newPassword: e.target.value }))} onKeyDown={e => e.key === "Enter" && submitReset()} style={{ width: "100%", border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff", marginTop: 4 }} />
+                </div>
+              </div>
+              {err && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 10 }}>{err}</div>}
+              {msg && <div style={{ color: "#10b981", fontSize: 12, marginTop: 10 }}>{msg}</div>}
+              <button onClick={submitReset} disabled={loading} style={{ width: "100%", marginTop: 16, background: "#b86060", color: "#fff", border: "none", borderRadius: 30, padding: 12, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: loading ? 0.6 : 1 }}>
+                {loading ? "Please wait…" : "Reset Password"}
+              </button>
+              <div style={{ textAlign: "center", marginTop: 10 }}>
+                <button onClick={() => { setMode("login"); setErr(""); setMsg(""); }} style={{ background: "none", border: "none", color: "#b86060", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>← Back to Log In</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminLogin({ onSuccess, onClose }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState(false);
@@ -172,10 +318,10 @@ function AdminLogin({ onSuccess, onClose }) {
 }
 
 // ─── Checkout Modal ───────────────────────────────────────────────────────────
-function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, onClose, onOrderPlaced }) {
+function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, customer, onClose, onOrderPlaced }) {
   const [step, setStep] = useState(1);
   const [payMethod, setPayMethod] = useState("bank");
-  const [form, setForm] = useState({ name: "", phone: "", address: "", size: "", note: "" });
+  const [form, setForm] = useState({ name: customer?.name || "", phone: customer?.phone || "", address: "", size: "", note: "" });
   const [proof, setProof] = useState(null);
   const proofRef = useRef();
   const grand = total + shippingFee;
@@ -309,29 +455,34 @@ function ProductCard({ p, editMode, onUpdate, onDelete, onAddToCart, onLightbox 
       <div style={{ padding: "14px 18px 18px" }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: "#2a1818", marginBottom: 6 }}>{editMode ? <ET value={p.name} onChange={v => onUpdate(p.id, "name", v)} /> : p.name}</div>
         <div style={{ fontSize: 12, color: "#8a6a6a", marginBottom: 10, lineHeight: 1.65 }}>{editMode ? <ET value={p.desc} onChange={v => onUpdate(p.id, "desc", v)} multi /> : p.desc}</div>
-        <div style={{ fontSize: 11, color: "#c09090", marginBottom: 10 }}>Sizes: {editMode ? <ET value={p.sizes} onChange={v => onUpdate(p.id, "sizes", v)} /> : p.sizes}</div>
-        {/* Stock */}
-        {editMode ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-            <span style={{ fontSize: 11, color: "#b08080" }}>Stock:</span>
-            <ET value={String(p.stock ?? 0)} onChange={v => onUpdate(p.id, "stock", Number(v))} />
+        {/* Per-size stock */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: "#b08080", marginBottom: 6 }}>Sizes & stock:</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {SIZE_LIST.map(sz => {
+              const stockVal = (p.sizeStock && p.sizeStock[sz] !== undefined) ? p.sizeStock[sz] : 0;
+              return (
+                <div key={sz} style={{ display: "flex", alignItems: "center", gap: 4, background: "#fdf6f6", borderRadius: 8, padding: "4px 8px", border: "1px solid #fae8e8" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#5a3535" }}>{sz}</span>
+                  {editMode ? (
+                    <ET value={String(stockVal)} onChange={v => onUpdate(p.id, "sizeStock", { ...(p.sizeStock || {}), [sz]: Number(v) })} />
+                  ) : (
+                    <span style={{ fontSize: 11, color: stockVal === 0 ? "#ef4444" : stockVal <= 3 ? "#f59e0b" : "#10b981" }}>
+                      {stockVal === 0 ? "Sold out" : `${stockVal} left`}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        ) : (
-          <div style={{ marginBottom: 14 }}>
-            {(p.stock ?? 0) === 0
-              ? <span style={{ fontSize: 11, fontWeight: 700, color: "#ef4444", background: "#fff0f0", padding: "2px 10px", borderRadius: 10 }}>Sold Out</span>
-              : (p.stock ?? 0) <= 3
-              ? <span style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", background: "#fffbeb", padding: "2px 10px", borderRadius: 10 }}>Only {p.stock} left!</span>
-              : <span style={{ fontSize: 11, color: "#10b981" }}>✓ In stock ({p.stock} left)</span>}
-          </div>
-        )}
+        </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 20, fontWeight: 700, color: "#b86060" }}>
             <span style={{ fontSize: 12 }}>RM </span>
             {editMode ? <ET value={String(p.price)} onChange={v => onUpdate(p.id, "price", Number(v))} /> : p.price}
           </div>
-          <button onClick={() => onAddToCart(p)} disabled={(p.stock ?? 0) === 0}
-            style={{ background: (p.stock ?? 0) === 0 ? "#ddd" : "#b86060", color: "#fff", border: "none", borderRadius: "50%", width: 36, height: 36, fontSize: 22, cursor: (p.stock ?? 0) === 0 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+          <button onClick={() => onAddToCart(p)} disabled={SIZE_LIST.every(sz => ((p.sizeStock && p.sizeStock[sz]) || 0) === 0)}
+            style={{ background: SIZE_LIST.every(sz => ((p.sizeStock && p.sizeStock[sz]) || 0) === 0) ? "#ddd" : "#b86060", color: "#fff", border: "none", borderRadius: "50%", width: 36, height: 36, fontSize: 22, cursor: SIZE_LIST.every(sz => ((p.sizeStock && p.sizeStock[sz]) || 0) === 0) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
         </div>
       </div>
     </div>
@@ -351,6 +502,10 @@ export default function MayNails() {
   const [showLogin, setShowLogin] = useState(IS_ADMIN_URL);
   const [editMode, setEditMode] = useState(false);
 
+  // Customer account
+  const [customer, setCustomer] = useState(null); // logged in customer record
+  const [showCustomerAuth, setShowCustomerAuth] = useState(false);
+
   const [section, setSection] = useState("home");
   const [cart, setCart] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
@@ -358,17 +513,42 @@ export default function MayNails() {
   const [shippingZone, setShippingZone] = useState("west"); // "west" | "east" | "sameday"
   const [toast, setToast] = useState("");
   const [lightbox, setLightbox] = useState(null);
+  const [allCustomers, setAllCustomers] = useState([]);
+  const [trackId, setTrackId] = useState("");
+  const [trackPhone, setTrackPhone] = useState("");
+  const [trackResult, setTrackResult] = useState(null);
+  const [trackSearched, setTrackSearched] = useState(false);
 
   useEffect(() => {
     (async () => {
       const [p, g, s, o] = await Promise.all([dbLoad("products"), dbLoad("gallery"), dbLoad("settings"), dbLoad("orders")]);
-      if (p) setProducts(p.map(prod => ({ ...prod, images: prod.images || [], stock: prod.stock ?? 10 })));
+      if (p) setProducts(p.map(prod => ({ ...prod, images: prod.images || [], sizeStock: prod.sizeStock || makeStock(prod.stock ?? 10) })));
       if (g) setGallery(g);
       if (s) setSettings(prev => ({ ...prev, ...s, shipping: { ...prev.shipping, ...(s.shipping || {}), west: { ...prev.shipping.west, ...(s.shipping?.west || {}) }, east: { ...prev.shipping.east, ...(s.shipping?.east || {}) }, express: { ...prev.shipping.express, ...(s.shipping?.express || {}) } }, guide: { ...prev.guide, ...(s.guide || {}) }, contact: { ...prev.contact, ...(s.contact || {}) } }));
       if (o) setOrders(o);
       setLoaded(true);
+
+      // Restore customer session (kept only for this browser tab/session)
+      try {
+        const savedEmail = sessionStorage.getItem("mn_customer_email");
+        if (savedEmail) {
+          const customers = (await dbLoad("customers")) || [];
+          const found = customers.find(c => c.email === savedEmail);
+          if (found) { setCustomer(found); setCart(found.cart || []); }
+        }
+      } catch {}
     })();
   }, []);
+
+  // Persist cart to customer record whenever it changes (if logged in)
+  useEffect(() => {
+    if (!customer) return;
+    (async () => {
+      const customers = (await dbLoad("customers")) || [];
+      const next = customers.map(c => c.id === customer.id ? { ...c, cart } : c);
+      await dbSave("customers", next);
+    })();
+  }, [cart, customer?.id]);
 
   const saveProducts = v => { setProducts(v); dbSave("products", v); };
   const saveGallery = v => { setGallery(v); dbSave("gallery", v); };
@@ -390,14 +570,16 @@ export default function MayNails() {
   const removeFromCart = id => setCart(p => p.filter(i => i.id !== id));
   const adjustQty = (id, d) => setCart(p => p.map(i => i.id === id ? { ...i, qty: Math.max(1, i.qty + d) } : i));
   const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
-  const zoneRate = shippingZone === "sameday" ? settings.shipping.express.price : shippingZone === "east" ? settings.shipping.east.price : settings.shipping.west.price;
-  const shippingFee = shippingZone === "sameday" ? settings.shipping.express.price : (cartTotal >= settings.shipping.free_threshold ? 0 : zoneRate);
-  const zoneLabel = shippingZone === "sameday" ? settings.shipping.express.label : shippingZone === "east" ? settings.shipping.east.label : settings.shipping.west.label;
+  const ZONE_MAP = { west: settings.shipping.west, east: settings.shipping.east, sameday: settings.shipping.express };
+  const isExpressZone = shippingZone === "sameday";
+  const zoneRate = (ZONE_MAP[shippingZone] || settings.shipping.west).price;
+  const shippingFee = isExpressZone ? zoneRate : (cartTotal >= settings.shipping.free_threshold ? 0 : zoneRate);
+  const zoneLabel = (ZONE_MAP[shippingZone] || settings.shipping.west).label;
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
   // Products
   const updProduct = (id, key, val) => saveProducts(products.map(p => p.id === id ? { ...p, [key]: val } : p));
-  const addProduct = () => saveProducts([...products, { id: uid(), name: "New Style", desc: "Click to edit description", price: 30, tag: "", sizes: "XS · S · M · L · XL", images: [], stock: 10 }]);
+  const addProduct = () => saveProducts([...products, { id: uid(), name: "New Style", desc: "Click to edit description", price: 30, tag: "", images: [], sizeStock: makeStock(10) }]);
   const delProduct = id => saveProducts(products.filter(p => p.id !== id));
 
   // Gallery
@@ -408,15 +590,22 @@ export default function MayNails() {
   // Orders
   const placeOrder = order => { const next = [order, ...orders]; saveOrders(next); setCart([]); };
   const updateOrderStatus = (id, status) => saveOrders(orders.map(o => o.id === id ? { ...o, status } : o));
+  const updateOrderTracking = (id, tracking) => saveOrders(orders.map(o => o.id === id ? { ...o, tracking } : o));
   const deleteOrder = id => saveOrders(orders.filter(o => o.id !== id));
 
   const statusColor = { "Pending Payment": "#f59e0b", "Payment Verified": "#10b981", "Shipped": "#6366f1", "Completed": "#b86060", "Cancelled": "#ef4444" };
 
+  useEffect(() => {
+    if (section === "customers" && isAdmin && editMode) {
+      (async () => { const c = (await dbLoad("customers")) || []; setAllCustomers(c); })();
+    }
+  }, [section, isAdmin, editMode]);
+
   const navItems = [
     { key: "home", label: "Home" }, { key: "shop", label: "Shop" },
     { key: "gallery", label: "Gallery" }, { key: "guide", label: "Size Guide" },
-    { key: "faq", label: "FAQ" }, { key: "contact", label: "Contact" },
-    ...(isAdmin && editMode ? [{ key: "orders", label: "📋 Orders" }] : []),
+    { key: "faq", label: "FAQ" }, { key: "track", label: "Track Order" }, { key: "contact", label: "Contact" },
+    ...(isAdmin && editMode ? [{ key: "orders", label: "📋 Orders" }, { key: "customers", label: "👥 Customers" }] : []),
   ];
 
   const P = ({ children }) => <span style={{ fontFamily: "'Georgia','Times New Roman',serif" }}>{children}</span>;
@@ -471,6 +660,17 @@ export default function MayNails() {
               {editMode ? "✅ Done" : "✏️ Edit"}
             </button>
           )}
+          {customer ? (
+            <button onClick={() => { if (confirm("Log out?")) { setCustomer(null); setCart([]); try { sessionStorage.removeItem("mn_customer_email"); } catch {} } }}
+              style={{ background: "transparent", border: "1.5px solid #b86060", color: "#b86060", borderRadius: 20, padding: "5px 13px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+              👤 {customer.name.split(" ")[0]}
+            </button>
+          ) : (
+            <button onClick={() => setShowCustomerAuth(true)}
+              style={{ background: "transparent", border: "1.5px solid #b86060", color: "#b86060", borderRadius: 20, padding: "5px 13px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+              👤 Log In
+            </button>
+          )}
           <button className="cart-btn" onClick={() => setCartOpen(true)}>
             🛒 Cart {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
           </button>
@@ -480,6 +680,15 @@ export default function MayNails() {
       {toast && <div className="toast">{toast}</div>}
       {lightbox && <Lightbox images={lightbox.images} startIdx={lightbox.idx} onClose={() => setLightbox(null)} />}
       {showLogin && <AdminLogin onSuccess={() => { setIsAdmin(true); setShowLogin(false); }} onClose={() => setShowLogin(false)} />}
+      {showCustomerAuth && <CustomerAuthModal
+        onSuccess={(cust) => {
+          setCustomer(cust);
+          if (cust.cart && cust.cart.length > 0) setCart(cust.cart);
+          try { sessionStorage.setItem("mn_customer_email", cust.email); } catch {}
+          setShowCustomerAuth(false);
+          showToast(`Welcome, ${cust.name.split(" ")[0]}! 🩷`);
+        }}
+        onClose={() => setShowCustomerAuth(false)} />}
 
       {/* CART */}
       {cartOpen && <>
@@ -524,7 +733,7 @@ export default function MayNails() {
         </div>
       </>}
 
-      {checkout && <CheckoutModal cart={cart} total={cartTotal} shippingFee={shippingFee} shippingZone={zoneLabel} settings={settings} onClose={() => setCheckout(false)} onOrderPlaced={order => { placeOrder(order); setCheckout(false); showToast("Order placed! 🩷"); }} />}
+      {checkout && <CheckoutModal cart={cart} total={cartTotal} shippingFee={shippingFee} shippingZone={zoneLabel} settings={settings} customer={customer} onClose={() => setCheckout(false)} onOrderPlaced={order => { placeOrder({ ...order, customerEmail: customer?.email || null }); setCheckout(false); if (customer) setCart([]); showToast("Order placed! 🩷"); }} />}
 
       {/* ══ HOME ══ */}
       {section === "home" && <>
@@ -590,17 +799,18 @@ export default function MayNails() {
                   <span style={{ background: "#b86060", color: "#fff", borderRadius: 10, fontSize: 10, padding: "2px 8px", marginLeft: 6 }}>FREE</span></span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px dashed #f0c0c0", fontSize: 13, color: "#5a3535" }}>
-                <span>🇲🇾 {editMode ? <ET value={settings.shipping.west.label} onChange={v => updS("shipping.west.label", v)} /> : settings.shipping.west.label} ({editMode ? <ET value={settings.shipping.west.days} onChange={v => updS("shipping.west.days", v)} /> : settings.shipping.west.days})</span>
+                <span>{editMode ? <ET value={settings.shipping.west.label} onChange={v => updS("shipping.west.label", v)} /> : settings.shipping.west.label} ({editMode ? <ET value={settings.shipping.west.days} onChange={v => updS("shipping.west.days", v)} /> : settings.shipping.west.days})</span>
                 <span style={{ fontWeight: 700, color: "#b86060" }}>RM {editMode ? <ET value={String(settings.shipping.west.price)} onChange={v => updS("shipping.west.price", Number(v))} /> : settings.shipping.west.price}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px dashed #f0c0c0", fontSize: 13, color: "#5a3535" }}>
-                <span>🌴 {editMode ? <ET value={settings.shipping.east.label} onChange={v => updS("shipping.east.label", v)} /> : settings.shipping.east.label} ({editMode ? <ET value={settings.shipping.east.days} onChange={v => updS("shipping.east.days", v)} /> : settings.shipping.east.days})</span>
+                <span>{editMode ? <ET value={settings.shipping.east.label} onChange={v => updS("shipping.east.label", v)} /> : settings.shipping.east.label} ({editMode ? <ET value={settings.shipping.east.days} onChange={v => updS("shipping.east.days", v)} /> : settings.shipping.east.days})</span>
                 <span style={{ fontWeight: 700, color: "#b86060" }}>RM {editMode ? <ET value={String(settings.shipping.east.price)} onChange={v => updS("shipping.east.price", Number(v))} /> : settings.shipping.east.price}</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", fontSize: 13, color: "#5a3535" }}>
-                <span>⚡ {editMode ? <ET value={settings.shipping.express.label} onChange={v => updS("shipping.express.label", v)} /> : settings.shipping.express.label} ({editMode ? <ET value={settings.shipping.express.days} onChange={v => updS("shipping.express.days", v)} /> : settings.shipping.express.days})</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px dashed #f0c0c0", fontSize: 13, color: "#5a3535" }}>
+                <span>{editMode ? <ET value={settings.shipping.express.label} onChange={v => updS("shipping.express.label", v)} /> : settings.shipping.express.label} ({editMode ? <ET value={settings.shipping.express.days} onChange={v => updS("shipping.express.days", v)} /> : settings.shipping.express.days})</span>
                 <span style={{ fontWeight: 700, color: "#b86060" }}>RM {editMode ? <ET value={String(settings.shipping.express.price)} onChange={v => updS("shipping.express.price", Number(v))} /> : settings.shipping.express.price}</span>
               </div>
+
             </div>
             {/* Selected zone summary */}
             {!editMode && (
@@ -730,6 +940,48 @@ export default function MayNails() {
         </div>
       )}
 
+      {/* ══ TRACK ORDER ══ */}
+      {section === "track" && (
+        <div className="section">
+          <h2 className="sec-title">Track Your <span>Order</span></h2>
+          <p className="sec-sub">Enter your order ID and phone number to check your order status.</p>
+          <div style={{ maxWidth: 420, margin: "0 auto", background: "#fff", borderRadius: 20, padding: 24, border: "1px solid #fae0e0" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px", display: "block", marginBottom: 4 }}>Order ID</label>
+                <input value={trackId} onChange={e => setTrackId(e.target.value)} placeholder="e.g. AB12CD3" style={{ width: "100%", border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fffaf8" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px", display: "block", marginBottom: 4 }}>Phone number</label>
+                <input value={trackPhone} onChange={e => setTrackPhone(e.target.value)} placeholder="Phone used at checkout" style={{ width: "100%", border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fffaf8" }} />
+              </div>
+              <button className="btn-primary" style={{ width: "100%", marginTop: 4 }} onClick={() => {
+                const found = orders.find(o => o.id.toLowerCase() === trackId.trim().toLowerCase() && o.customer.phone.replace(/\s|-/g, "") === trackPhone.trim().replace(/\s|-/g, ""));
+                setTrackResult(found || null);
+                setTrackSearched(true);
+              }}>Track Order</button>
+            </div>
+            {trackSearched && (
+              trackResult ? (
+                <div style={{ marginTop: 20, background: "#fdf6f6", borderRadius: 14, padding: 18, border: "1px solid #f5d0d0" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                    <span style={{ fontSize: 12, color: "#b08080", fontFamily: "monospace" }}>#{trackResult.id.toUpperCase()}</span>
+                    <span style={{ borderRadius: 12, padding: "3px 12px", fontSize: 11, fontWeight: 700, background: (statusColor[trackResult.status] || "#888") + "22", color: statusColor[trackResult.status] || "#888" }}>{trackResult.status}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: "#5a3535", marginBottom: 6 }}>{trackResult.items.map(i => `${i.name} ×${i.qty}`).join(", ")}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#b86060" }}>{fmt(trackResult.grand)}</div>
+                  {trackResult.tracking
+                    ? <div style={{ fontSize: 13, color: "#10b981", marginTop: 10 }}>📦 Tracking number: <strong>{trackResult.tracking}</strong></div>
+                    : <div style={{ fontSize: 12, color: "#c09090", marginTop: 10 }}>Tracking number not available yet.</div>}
+                </div>
+              ) : (
+                <div style={{ marginTop: 20, textAlign: "center", color: "#c09090", fontSize: 13 }}>No matching order found. Please check your Order ID and phone number.</div>
+              )
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ══ CONTACT ══ */}
       {section === "contact" && (
         <div className="section">
@@ -797,10 +1049,38 @@ export default function MayNails() {
                   <select value={o.status} onChange={e => updateOrderStatus(o.id, e.target.value)} style={{ border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "6px 10px", fontSize: 12, fontFamily: "inherit", background: "#fffaf8", outline: "none", cursor: "pointer" }}>
                     {["Pending Payment", "Payment Verified", "Shipped", "Completed", "Cancelled"].map(s => <option key={s}>{s}</option>)}
                   </select>
+                  <input placeholder="Tracking number" defaultValue={o.tracking || ""} onBlur={e => updateOrderTracking(o.id, e.target.value)}
+                    style={{ border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "6px 10px", fontSize: 12, fontFamily: "inherit", background: "#fffaf8", outline: "none", width: 150 }} />
                   <button onClick={() => { if (confirm("Delete?")) deleteOrder(o.id); }} style={{ background: "none", border: "none", color: "#ccc", cursor: "pointer", fontSize: 13, padding: "6px 10px", borderRadius: 8 }}>🗑 Delete</button>
                 </div>
+                {o.tracking && <div style={{ fontSize: 12, color: "#10b981", marginTop: 8 }}>📦 Tracking: <strong>{o.tracking}</strong></div>}
               </div>
             ))}
+        </div>
+      )}
+
+      {/* ══ CUSTOMERS (admin) ══ */}
+      {section === "customers" && isAdmin && editMode && (
+        <div className="section">
+          <div style={{ marginBottom: 24 }}>
+            <h2 className="sec-title" style={{ textAlign: "left", marginBottom: 4 }}>👥 Customers</h2>
+            <p style={{ fontSize: 13, color: "#a07070" }}>{allCustomers.length} registered customer{allCustomers.length !== 1 ? "s" : ""}</p>
+          </div>
+          {allCustomers.length === 0
+            ? <div style={{ textAlign: "center", padding: "60px 20px", color: "#c09090", fontSize: 14, lineHeight: 2 }}>No registered customers yet.</div>
+            : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {allCustomers.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(c => (
+                  <div key={c.id} style={{ background: "#fff", borderRadius: 16, padding: "16px 20px", border: "1px solid #fae0e0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: "#2a1818" }}>{c.name}</div>
+                      <div style={{ fontSize: 12, color: "#8a6060" }}>{c.email}{c.phone ? ` · ${c.phone}` : ""}</div>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#c09090" }}>Joined {new Date(c.createdAt).toLocaleDateString("en-MY", { dateStyle: "medium" })}</div>
+                  </div>
+                ))}
+              </div>
+            )}
         </div>
       )}
 
