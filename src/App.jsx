@@ -514,6 +514,7 @@ export default function MayNails() {
   const [toast, setToast] = useState("");
   const [lightbox, setLightbox] = useState(null);
   const [allCustomers, setAllCustomers] = useState([]);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [trackId, setTrackId] = useState("");
   const [trackPhone, setTrackPhone] = useState("");
   const [trackResult, setTrackResult] = useState(null);
@@ -625,6 +626,17 @@ export default function MayNails() {
         .edit-toggle{border:1.5px solid #b86060;border-radius:20px;padding:5px 13px;font-size:12px;cursor:pointer;transition:all .18s;font-family:inherit;white-space:nowrap}
         .cart-btn{position:relative;background:#b86060;border:none;color:#fff;border-radius:20px;padding:6px 16px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
         .cart-badge{position:absolute;top:-5px;right:-5px;background:#2a1818;color:#fff;border-radius:50%;width:19px;height:19px;font-size:10px;display:flex;align-items:center;justify-content:center}
+        .hamburger{display:none;background:none;border:none;cursor:pointer;padding:6px;color:#b86060;font-size:22px;line-height:1}
+        .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:150}
+        .sidebar{position:fixed;left:0;top:0;bottom:0;width:240px;background:#fffaf8;z-index:151;display:flex;flex-direction:column;box-shadow:4px 0 30px #b8606020;transform:translateX(0);transition:transform .25s ease}
+        .sidebar-header{padding:20px 20px 12px;border-bottom:1px solid #fae0e0;display:flex;align-items:center;justify-content:space-between}
+        .sidebar-logo{font-size:16px;font-weight:700;letter-spacing:2px;color:#b86060;font-style:italic}
+        .sidebar-close{background:none;border:none;font-size:20px;cursor:pointer;color:#b86060}
+        .sidebar-links{display:flex;flex-direction:column;padding:12px 10px;gap:2px;overflow-y:auto;flex:1}
+        .sidebar-btn{background:none;border:none;cursor:pointer;padding:11px 14px;border-radius:14px;font-size:14px;color:#4a2a2a;text-align:left;font-family:inherit;transition:background .15s,color .15s;width:100%}
+        .sidebar-btn:hover,.sidebar-btn.active{background:#fceaea;color:#b86060;font-weight:700}
+        @media(max-width:768px){.hamburger{display:flex}.nav-links{display:none}.section{padding:40px 14px}}
+        @media(min-width:769px){.sidebar,.sidebar-overlay{display:none !important}}
         .btn-primary{background:#b86060;color:#fff;border:none;border-radius:30px;padding:12px 28px;font-size:14px;cursor:pointer;box-shadow:0 4px 18px #b8606040;font-family:inherit;transition:transform .15s,box-shadow .15s}
         .btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 28px #b8606055}
         .btn-outline{background:transparent;color:#b86060;border:1.5px solid #b86060;border-radius:30px;padding:11px 24px;font-size:14px;cursor:pointer;font-family:inherit;transition:background .15s}
@@ -642,12 +654,31 @@ export default function MayNails() {
         .eta{border:1.5px solid #b86060;border-radius:6px;padding:4px 8px;font-size:inherit;font-family:inherit;color:inherit;background:#fff9f9;outline:none;width:100%;resize:vertical;min-height:54px;display:block}
         .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#2a1818;color:#fff;border-radius:30px;padding:10px 24px;font-size:13px;z-index:500;animation:fu .3s ease;pointer-events:none;white-space:nowrap}
         @keyframes fu{from{opacity:0;transform:translateX(-50%) translateY(12px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
-        @media(max-width:600px){.nav{padding:0 10px}.nav-logo{font-size:15px}.nav-links .nav-btn{padding:4px 6px;font-size:10px}.section{padding:40px 14px}}
+
       `}</style>
+
+      {/* SIDEBAR (mobile) */}
+      {menuOpen && <>
+        <div className="sidebar-overlay" onClick={() => setMenuOpen(false)} />
+        <div className="sidebar">
+          <div className="sidebar-header">
+            <span className="sidebar-logo">May Nails</span>
+            <button className="sidebar-close" onClick={() => setMenuOpen(false)}>✕</button>
+          </div>
+          <div className="sidebar-links">
+            {navItems.filter(n => n.key !== "shop").map(({ key, label }) => (
+              <button key={key} className={`sidebar-btn ${section === key ? "active" : ""}`} onClick={() => { setSection(key); setMenuOpen(false); }}>{label}</button>
+            ))}
+          </div>
+        </div>
+      </>}
 
       {/* NAV */}
       <nav className="nav">
-        <div className="nav-logo">May Nails</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button className="hamburger" onClick={() => setMenuOpen(true)}>☰</button>
+          <div className="nav-logo">May Nails</div>
+        </div>
         <div className="nav-links">
           {navItems.map(({ key, label }) => (
             <button key={key} className={`nav-btn ${section === key ? "active" : ""}`} onClick={() => setSection(key)}>{label}</button>
