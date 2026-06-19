@@ -90,6 +90,7 @@ const DEFAULT_SETTINGS = {
   hero: { tagline: "Press-on Nails · Swap Anytime · Salon-perfect Every Day", subtext: "No nail tech needed — gorgeous nails in 5 minutes, at home." },
   shipping: { free_threshold: 80, west: { label: "West Malaysia", price: 7, days: "2–4 working days" }, east: { label: "East Malaysia (Sabah/Sarawak)", price: 12, days: "4–7 working days" }, express: { label: "Same Day", price: 18, days: "Via Lalamove, same day" } },
   shopSubtitle: "Each set includes 10 nails (thumb to pinky). Order your preferred size using the size chart above.",
+  maintenance: { enabled: false, message: "We're updating the store — be back shortly! 🩷" },
   payment: { bank_name: "Maybank", bank_acc: "1234 5678 9012", bank_holder: "May Nails", tng_number: "+60 12-345 6789", tng_qr: null },
   contact: { instagram: "https://instagram.com/maynails.my", instagram_label: "@maynails.my", tiktok: "https://tiktok.com/@maynails", tiktok_label: "@maynails", email: "hello@maynails.my", hours: "Mon–Sun, 10am–10pm", note: "We ship within 24 hours of your order. DM us on Instagram or TikTok for any questions 🩷" },
   faq: [
@@ -321,12 +322,23 @@ function AdminLogin({ onSuccess, onClose }) {
 function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, customer, onClose, onOrderPlaced }) {
   const [step, setStep] = useState(1);
   const [payMethod, setPayMethod] = useState("bank");
-  const [form, setForm] = useState({ name: customer?.name || "", phone: customer?.phone || "", address: "", size: "", note: "" });
+  const [form, setForm] = useState({ name: customer?.name || "", phone: customer?.phone || "", address: "", state: "", size: "", note: "", shippingMethod: "west" });
   const [proof, setProof] = useState(null);
   const proofRef = useRef();
-  const grand = total + shippingFee;
+  const EAST_STATES = ["Sabah", "Sarawak", "Labuan"];
+  const KL_SELANGOR = ["Kuala Lumpur", "Selangor"];
+  const MY_STATES = ["Johor","Kedah","Kelantan","Kuala Lumpur","Labuan","Melaka","Negeri Sembilan","Pahang","Perak","Perlis","Putrajaya","Pulau Pinang","Sabah","Sarawak","Selangor","Terengganu"];
+  const getShippingForState = (state) => {
+    if (EAST_STATES.includes(state)) return "east";
+    return "west";
+  };
+  const canUseLalamove = KL_SELANGOR.includes(form.state);
+  const effectiveMethod = form.shippingMethod;
+  const methodRate = effectiveMethod === "east" ? settings.shipping.east.price : effectiveMethod === "sameday" ? settings.shipping.express.price : settings.shipping.west.price;
+  const methodFee = effectiveMethod === "sameday" ? methodRate : (total >= settings.shipping.free_threshold ? 0 : methodRate);
+  const grand = total + methodFee;
   const submitOrder = () => {
-    const order = { id: uid(), date: new Date().toISOString(), customer: form, items: cart, subtotal: total, shipping: shippingFee, grand, payMethod, proof, status: "Pending Payment" };
+    const order = { id: uid(), date: new Date().toISOString(), customer: form, items: cart, subtotal: total, shipping: methodFee, shippingMethod: effectiveMethod, grand, payMethod, proof, status: "Pending Payment" };
     onOrderPlaced(order);
     appendToSheet(order);
     setStep(3);
@@ -342,22 +354,58 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, custo
           {step === 1 && <>
             <div style={{ background: "#fdf6f6", borderRadius: 14, padding: 14, marginBottom: 18 }}>
               {cart.map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5a3535", padding: "3px 0" }}><span>{i.name} × {i.qty}</span><span>RM {(i.price * i.qty).toFixed(2)}</span></div>)}
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5a3535", padding: "6px 0", borderTop: "1px dashed #f0d0d0", marginTop: 6 }}><span>Shipping ({shippingZone})</span><span>{shippingFee === 0 ? "Free" : fmt(shippingFee)}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5a3535", padding: "6px 0", borderTop: "1px dashed #f0d0d0", marginTop: 6 }}><span>Shipping</span><span>{methodFee === 0 ? "Free" : fmt(methodFee)}</span></div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 700, color: "#b86060" }}><span>Total</span><span>{fmt(grand)}</span></div>
+              {form.state && <div style={{ fontSize: 11, color: "#10b981", marginTop: 4 }}>📦 {form.state} · {effectiveMethod === "east" ? settings.shipping.east.label : effectiveMethod === "sameday" ? settings.shipping.express.label : settings.shipping.west.label}</div>}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {[["name", "Full name"], ["phone", "Phone / WhatsApp"], ["address", "Delivery address"], ["size", "Nail size (e.g. XS/S/M)"]].map(([k, lbl]) => (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[["name", "Full name"], ["phone", "Phone / WhatsApp"], ["address", "Delivery address"]].map(([k, lbl]) => (
                 <div key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>{lbl}</label>
                   <input style={{ border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff" }} value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} placeholder={lbl} />
                 </div>
               ))}
-              <div style={{ gridColumn: "1/-1", display: "flex", flexDirection: "column", gap: 4 }}>
+              {/* State selector */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>State</label>
+                <select value={form.state} onChange={e => {
+                  const st = e.target.value;
+                  const zone = EAST_STATES.includes(st) ? "east" : "west";
+                  setForm(f => ({ ...f, state: st, shippingMethod: zone }));
+                }} style={{ border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff" }}>
+                  <option value="">Select state</option>
+                  {MY_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              {/* Shipping method */}
+              {form.state && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>Shipping method</label>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {[
+                      { key: EAST_STATES.includes(form.state) ? "east" : "west", label: EAST_STATES.includes(form.state) ? `East Malaysia — RM${settings.shipping.east.price}` : `West Malaysia — RM${settings.shipping.west.price}`, always: true },
+                      ...(canUseLalamove ? [{ key: "sameday", label: `Same Day (Lalamove) — RM${settings.shipping.express.price}`, always: false }] : []),
+                    ].map(opt => (
+                      <button key={opt.key} onClick={() => setForm(f => ({ ...f, shippingMethod: opt.key }))}
+                        style={{ flex: 1, minWidth: 140, padding: "9px 12px", borderRadius: 12, border: `1.5px solid ${form.shippingMethod === opt.key ? "#b86060" : "#f0d0d0"}`, background: form.shippingMethod === opt.key ? "#fceaea" : "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: 12, color: form.shippingMethod === opt.key ? "#b86060" : "#5a3535", fontWeight: form.shippingMethod === opt.key ? 700 : 400, textAlign: "left" }}>
+                        {opt.label}{total >= settings.shipping.free_threshold && opt.key !== "sameday" ? " 🎉 Free!" : ""}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+                  <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>Nail size</label>
+                  <input style={{ border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff" }} value={form.size} onChange={e => setForm(f => ({ ...f, size: e.target.value }))} placeholder="e.g. XS/S/M" />
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>Special requests (optional)</label>
                 <textarea style={{ border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff", resize: "vertical", minHeight: 60 }} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Any special requests?" />
               </div>
             </div>
-            <button disabled={!form.name || !form.phone || !form.address} onClick={() => setStep(2)} style={{ width: "100%", marginTop: 16, background: "#b86060", color: "#fff", border: "none", borderRadius: 30, padding: 12, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: (!form.name || !form.phone || !form.address) ? 0.5 : 1 }}>Continue to Payment →</button>
+            <button disabled={!form.name || !form.phone || !form.address || !form.state} onClick={() => setStep(2)} style={{ width: "100%", marginTop: 16, background: "#b86060", color: "#fff", border: "none", borderRadius: 30, padding: 12, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: (!form.name || !form.phone || !form.address || !form.state) ? 0.5 : 1 }}>Continue to Payment →</button>
           </>}
           {step === 2 && <>
             <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
@@ -525,7 +573,7 @@ export default function MayNails() {
       const [p, g, s, o] = await Promise.all([dbLoad("products"), dbLoad("gallery"), dbLoad("settings"), dbLoad("orders")]);
       if (p) setProducts(p.map(prod => ({ ...prod, images: prod.images || [], sizeStock: prod.sizeStock || makeStock(prod.stock ?? 10) })));
       if (g) setGallery(g);
-      if (s) setSettings(prev => ({ ...prev, ...s, shipping: { ...prev.shipping, ...(s.shipping || {}), west: { ...prev.shipping.west, ...(s.shipping?.west || {}) }, east: { ...prev.shipping.east, ...(s.shipping?.east || {}) }, express: { ...prev.shipping.express, ...(s.shipping?.express || {}) } }, guide: { ...prev.guide, ...(s.guide || {}) }, contact: { ...prev.contact, ...(s.contact || {}) } }));
+      if (s) setSettings(prev => ({ ...prev, ...s, shipping: { ...prev.shipping, ...(s.shipping || {}), west: { ...prev.shipping.west, ...(s.shipping?.west || {}) }, east: { ...prev.shipping.east, ...(s.shipping?.east || {}) }, express: { ...prev.shipping.express, ...(s.shipping?.express || {}) } }, guide: { ...prev.guide, ...(s.guide || {}) }, contact: { ...prev.contact, ...(s.contact || {}) }, maintenance: { ...prev.maintenance, ...(s.maintenance || {}) } }));
       if (o) setOrders(o);
       setLoaded(true);
 
@@ -613,20 +661,29 @@ export default function MayNails() {
 
   if (!loaded) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "Georgia,serif", color: "#b86060", fontSize: 18 }}>Loading May Nails…</div>;
 
+  // Maintenance mode - only admin bypasses it
+  if (settings.maintenance?.enabled && !isAdmin) return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "Georgia,serif", background: "#fffaf8", padding: 24, textAlign: "center" }}>
+      <div style={{ fontSize: 52, marginBottom: 20 }}>🩷</div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: "#b86060", fontStyle: "italic", marginBottom: 16 }}>May Nails</div>
+      <div style={{ fontSize: 16, color: "#7a5858", maxWidth: 360, lineHeight: 1.8 }}>{settings.maintenance.message}</div>
+    </div>
+  );
+
   return (
     <div style={{ fontFamily: "'Georgia','Times New Roman',serif", background: "#fffaf8", minHeight: "100vh", color: "#2a1818" }}>
       <style>{`
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
         .nav{position:sticky;top:0;z-index:100;background:rgba(255,250,248,.96);backdrop-filter:blur(10px);border-bottom:1px solid #f0ddd8;display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:62px;gap:10px}
         .nav-logo{font-size:19px;font-weight:700;letter-spacing:3px;color:#b86060;font-style:italic;text-transform:uppercase;white-space:nowrap}
-        .nav-links{display:flex;gap:2px;flex-wrap:wrap}
+        .nav-links{display:none}
         .nav-btn{background:none;border:none;cursor:pointer;padding:6px 10px;border-radius:20px;font-size:12px;color:#4a2a2a;transition:background .18s,color .18s;font-family:inherit;white-space:nowrap}
         .nav-btn:hover,.nav-btn.active{background:#fceaea;color:#b86060}
         .nav-right{display:flex;gap:8px;align-items:center;flex-shrink:0}
         .edit-toggle{border:1.5px solid #b86060;border-radius:20px;padding:5px 13px;font-size:12px;cursor:pointer;transition:all .18s;font-family:inherit;white-space:nowrap}
         .cart-btn{position:relative;background:#b86060;border:none;color:#fff;border-radius:20px;padding:6px 16px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
         .cart-badge{position:absolute;top:-5px;right:-5px;background:#2a1818;color:#fff;border-radius:50%;width:19px;height:19px;font-size:10px;display:flex;align-items:center;justify-content:center}
-        .hamburger{display:none;background:none;border:none;cursor:pointer;padding:6px;color:#b86060;font-size:22px;line-height:1}
+        .hamburger{display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:6px;color:#b86060;font-size:22px;line-height:1}
         .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:150}
         .sidebar{position:fixed;left:0;top:0;bottom:0;width:240px;background:#fffaf8;z-index:151;display:flex;flex-direction:column;box-shadow:4px 0 30px #b8606020;transform:translateX(0);transition:transform .25s ease}
         .sidebar-header{padding:20px 20px 12px;border-bottom:1px solid #fae0e0;display:flex;align-items:center;justify-content:space-between}
@@ -635,8 +692,8 @@ export default function MayNails() {
         .sidebar-links{display:flex;flex-direction:column;padding:12px 10px;gap:2px;overflow-y:auto;flex:1}
         .sidebar-btn{background:none;border:none;cursor:pointer;padding:11px 14px;border-radius:14px;font-size:14px;color:#4a2a2a;text-align:left;font-family:inherit;transition:background .15s,color .15s;width:100%}
         .sidebar-btn:hover,.sidebar-btn.active{background:#fceaea;color:#b86060;font-weight:700}
-        @media(max-width:768px){.hamburger{display:flex}.nav-links{display:none}.section{padding:40px 14px}}
-        @media(min-width:769px){.sidebar,.sidebar-overlay{display:none !important}}
+        @media(max-width:768px){.section{padding:40px 14px}}
+
         .btn-primary{background:#b86060;color:#fff;border:none;border-radius:30px;padding:12px 28px;font-size:14px;cursor:pointer;box-shadow:0 4px 18px #b8606040;font-family:inherit;transition:transform .15s,box-shadow .15s}
         .btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 28px #b8606055}
         .btn-outline{background:transparent;color:#b86060;border:1.5px solid #b86060;border-radius:30px;padding:11px 24px;font-size:14px;cursor:pointer;font-family:inherit;transition:background .15s}
@@ -689,6 +746,12 @@ export default function MayNails() {
             <button className="edit-toggle" onClick={() => { setEditMode(m => !m); if (editMode && section === "orders") setSection("home"); }}
               style={{ background: editMode ? "#b86060" : "transparent", color: editMode ? "#fff" : "#b86060" }}>
               {editMode ? "✅ Done" : "✏️ Edit"}
+            </button>
+          )}
+          {isAdmin && editMode && (
+            <button onClick={() => { const next = JSON.parse(JSON.stringify(settings)); next.maintenance.enabled = !next.maintenance.enabled; saveSettings(next); }}
+              style={{ background: settings.maintenance?.enabled ? "#ef4444" : "transparent", border: "1.5px solid #ef4444", color: settings.maintenance?.enabled ? "#fff" : "#ef4444", borderRadius: 20, padding: "5px 13px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+              {settings.maintenance?.enabled ? "🔴 Site Closed" : "🟢 Close Site"}
             </button>
           )}
           {customer ? (
@@ -805,24 +868,7 @@ export default function MayNails() {
           {/* Shipping box */}
           <div style={{ background: "linear-gradient(135deg,#fff8f8,#fce8e8)", borderRadius: 20, padding: "24px 28px", border: "1px solid #f5d0d0", marginBottom: 40 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: "#b86060", marginBottom: 14 }}>📦 Shipping</div>
-            {/* Zone selector for customers */}
-            {!editMode && (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 12, color: "#8a6060", marginBottom: 8 }}>Select delivery option:</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {[
-                    { key: "west", label: "West Malaysia" },
-                    { key: "east", label: "East Malaysia" },
-                    { key: "sameday", label: "Same Day" },
-                  ].map(z => (
-                    <button key={z.key} onClick={() => setShippingZone(z.key)}
-                      style={{ flex: 1, minWidth: 100, padding: "8px 10px", borderRadius: 12, border: `1.5px solid ${shippingZone === z.key ? "#b86060" : "#f0d0d0"}`, background: shippingZone === z.key ? "#fceaea" : "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: 12, color: shippingZone === z.key ? "#b86060" : "#5a3535", fontWeight: shippingZone === z.key ? 700 : 400, transition: "all .15s" }}>
-                      {z.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+
             {/* Shipping rates */}
             <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px dashed #f0c0c0", fontSize: 13, color: "#5a3535" }}>
@@ -843,13 +889,7 @@ export default function MayNails() {
               </div>
 
             </div>
-            {/* Selected zone summary */}
-            {!editMode && (
-              <div style={{ marginTop: 12, background: "#fff", borderRadius: 12, padding: "10px 14px", fontSize: 13, color: "#5a3535", border: "1px solid #f0d0d0" }}>
-                Your shipping: <strong style={{ color: "#b86060" }}>{cartTotal >= settings.shipping.free_threshold ? "FREE 🎉" : fmt(zoneRate)}</strong>
-                {cartTotal < settings.shipping.free_threshold && <span style={{ color: "#c09090", fontSize: 11, marginLeft: 8 }}>Add {fmt(settings.shipping.free_threshold - cartTotal)} more for free shipping</span>}
-              </div>
-            )}
+
           </div>
           {/* Products */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 20 }}>
