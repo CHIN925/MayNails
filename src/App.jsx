@@ -324,6 +324,7 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, custo
   const [payMethod, setPayMethod] = useState("bank");
   const [form, setForm] = useState({ name: customer?.name || "", phone: customer?.phone || "", address: "", state: "", size: "", note: "", shippingMethod: "west" });
   const [proof, setProof] = useState(null);
+  const [placedOrderId, setPlacedOrderId] = useState("");
   const proofRef = useRef();
   const EAST_STATES = ["Sabah", "Sarawak", "Labuan"];
   const KL_SELANGOR = ["Kuala Lumpur", "Selangor"];
@@ -338,9 +339,11 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, custo
   const methodFee = effectiveMethod === "sameday" ? methodRate : (total >= settings.shipping.free_threshold ? 0 : methodRate);
   const grand = total + methodFee;
   const submitOrder = () => {
-    const order = { id: uid(), date: new Date().toISOString(), customer: form, items: cart, subtotal: total, shipping: methodFee, shippingMethod: effectiveMethod, grand, payMethod, proof, status: "Pending Payment" };
+    const orderId = uid();
+    const order = { id: orderId, date: new Date().toISOString(), customer: form, items: cart, subtotal: total, shipping: methodFee, shippingMethod: effectiveMethod, grand, payMethod, proof, status: "Pending Payment" };
     onOrderPlaced(order);
     appendToSheet(order);
+    setPlacedOrderId(orderId);
     setStep(3);
   };
   return (
@@ -442,7 +445,12 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, custo
           {step === 3 && <div style={{ textAlign: "center", padding: "32px 0" }}>
             <div style={{ fontSize: 56, marginBottom: 16 }}>🩷</div>
             <h3 style={{ fontSize: 20, marginBottom: 10 }}>Thank you, {form.name}!</h3>
-            <p style={{ fontSize: 14, color: "#7a5858", lineHeight: 1.8, marginBottom: 20 }}>Your order is received. We'll verify your payment and confirm via Instagram shortly.</p>
+            <p style={{ fontSize: 14, color: "#7a5858", lineHeight: 1.8, marginBottom: 12 }}>Your order is received. We'll verify your payment and confirm via Instagram shortly.</p>
+            <div style={{ background: "#fdf6f6", borderRadius: 14, padding: "14px 20px", marginBottom: 20, border: "1px solid #f5d0d0" }}>
+              <div style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>Your Order ID</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: "#b86060", letterSpacing: 2, fontFamily: "monospace" }}>#{placedOrderId.toUpperCase()}</div>
+              <div style={{ fontSize: 11, color: "#c09090", marginTop: 6 }}>Save this to track your order later 📦</div>
+            </div>
             <button onClick={onClose} style={{ background: "#b86060", color: "#fff", border: "none", borderRadius: 30, padding: "12px 28px", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>Done</button>
           </div>}
         </div>
@@ -650,10 +658,30 @@ export default function MayNails() {
     }
   }, [section, isAdmin, editMode]);
 
+  // Auto-refresh orders every 30s when admin is logged in
+  useEffect(() => {
+    if (!isAdmin) return;
+    const interval = setInterval(async () => {
+      const o = await dbLoad("orders");
+      if (o) {
+        setOrders(prev => {
+          const newOrders = o.filter(no => !prev.find(po => po.id === no.id));
+          if (newOrders.length > 0) {
+            showToast(`🔔 ${newOrders.length} new order${newOrders.length > 1 ? "s" : ""}!`);
+          }
+          return o;
+        });
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isAdmin]);
+
   const navItems = [
     { key: "home", label: "Home" }, { key: "shop", label: "Shop" },
     { key: "gallery", label: "Gallery" }, { key: "guide", label: "Size Guide" },
-    { key: "faq", label: "FAQ" }, { key: "track", label: "Track Order" }, { key: "contact", label: "Contact" },
+    { key: "faq", label: "FAQ" }, { key: "track", label: "Track Order" },
+    ...(customer ? [{ key: "myorders", label: "My Orders" }] : []),
+    { key: "contact", label: "Contact" },
     ...(isAdmin && editMode ? [{ key: "orders", label: "📋 Orders" }, { key: "customers", label: "👥 Customers" }] : []),
   ];
 
@@ -755,7 +783,7 @@ export default function MayNails() {
             </button>
           )}
           {customer ? (
-            <button onClick={() => { if (confirm("Log out?")) { setCustomer(null); setCart([]); try { sessionStorage.removeItem("mn_customer_email"); } catch {} } }}
+            <button onClick={() => { if (confirm("Log out?")) { setCustomer(null); setCart([]); setSection("home"); try { sessionStorage.removeItem("mn_customer_email"); } catch {} } }}
               style={{ background: "transparent", border: "1.5px solid #b86060", color: "#b86060", borderRadius: 20, padding: "5px 13px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
               👤 {customer.name.split(" ")[0]}
             </button>
@@ -1127,6 +1155,45 @@ export default function MayNails() {
                 {o.tracking && <div style={{ fontSize: 12, color: "#10b981", marginTop: 8 }}>📦 Tracking: <strong>{o.tracking}</strong></div>}
               </div>
             ))}
+        </div>
+      )}
+
+      {/* ══ MY ORDERS (customer) ══ */}
+      {section === "myorders" && customer && (
+        <div className="section">
+          <h2 className="sec-title">My <span>Orders</span></h2>
+          <p className="sec-sub">Logged in as {customer.name} · <button onClick={() => { if (confirm("Log out?")) { setCustomer(null); setCart([]); setSection("home"); try { sessionStorage.removeItem("mn_customer_email"); } catch {} } }} style={{ background: "none", border: "none", color: "#b86060", fontSize: 13, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>Log out</button></p>
+          {(() => {
+            const myOrders = orders.filter(o => o.customerEmail === customer.email);
+            if (myOrders.length === 0) return (
+              <div style={{ textAlign: "center", padding: "60px 20px", color: "#c09090", fontSize: 14, lineHeight: 2.2 }}>
+                No orders yet 🩷<br />
+                <button className="btn-primary" style={{ marginTop: 16 }} onClick={() => setSection("shop")}>Start Shopping</button>
+              </div>
+            );
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {myOrders.map(o => (
+                  <div key={o.id} style={{ background: "#fff", borderRadius: 18, padding: 20, border: "1px solid #fae0e0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 12, color: "#b08080", fontFamily: "monospace" }}>#{o.id.toUpperCase()}</div>
+                        <div style={{ fontSize: 11, color: "#c09090" }}>{new Date(o.date).toLocaleDateString("en-MY", { dateStyle: "medium" })}</div>
+                      </div>
+                      <span style={{ borderRadius: 12, padding: "3px 12px", fontSize: 11, fontWeight: 700, background: (statusColor[o.status] || "#888") + "22", color: statusColor[o.status] || "#888" }}>{o.status}</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: "#5a3535", marginBottom: 6 }}>{o.items.map(i => `${i.name} ×${i.qty}`).join("  ·  ")}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#b86060", marginBottom: o.tracking ? 8 : 0 }}>{fmt(o.grand)}</div>
+                    {o.tracking && (
+                      <div style={{ background: "#f0fdf4", borderRadius: 10, padding: "8px 12px", fontSize: 13, color: "#10b981", marginTop: 8 }}>
+                        📦 Tracking number: <strong>{o.tracking}</strong>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 
