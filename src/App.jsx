@@ -611,7 +611,12 @@ export default function MayNails() {
   const saveProducts = v => { setProducts(v); dbSave("products", v); };
   const saveGallery = v => { setGallery(v); dbSave("gallery", v); };
   const saveSettings = v => { setSettings(v); dbSave("settings", v); };
-  const saveOrders = v => { setOrders(v); dbSave("orders", v); };
+  const saveOrders = v => {
+    setOrders(v);
+    // Strip proof images before saving to Supabase (too large for DB)
+    const stripped = v.map(o => ({ ...o, proof: o.proof ? "uploaded" : null }));
+    dbSave("orders", stripped);
+  };
 
   const showToast = msg => { setToast(msg); setTimeout(() => setToast(""), 2400); };
 
