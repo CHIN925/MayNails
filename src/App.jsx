@@ -341,6 +341,7 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, custo
   const submitOrder = () => {
     const orderId = uid();
     const order = { id: orderId, date: new Date().toISOString(), customer: form, items: cart, subtotal: total, shipping: methodFee, shippingMethod: effectiveMethod, grand, payMethod, proof, status: "Pending Payment" };
+    // Save in background first, then show success
     onOrderPlaced(order);
     appendToSheet(order);
     setPlacedOrderId(orderId);
