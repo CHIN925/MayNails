@@ -48,11 +48,20 @@ async function dbLoad(key) {
 }
 async function dbSave(key, val) {
   try {
-    await fetch(`${SUPA_URL}/rest/v1/store_data`, {
-      method: "POST",
-      headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({ key, value: val })
+    // Try PATCH first (update existing row)
+    const patch = await fetch(`${SUPA_URL}/rest/v1/store_data?key=eq.${key}`, {
+      method: "PATCH",
+      headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ value: val })
     });
+    // If no row updated, insert new row
+    if (patch.headers.get("content-range") === "*/0") {
+      await fetch(`${SUPA_URL}/rest/v1/store_data`, {
+        method: "POST",
+        headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ key, value: val })
+      });
+    }
   } catch {}
 }
 
