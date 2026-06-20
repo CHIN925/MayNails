@@ -856,7 +856,7 @@ export default function MayNails() {
         </div>
       </>}
 
-      {checkout && <CheckoutModal cart={cart} total={cartTotal} shippingFee={shippingFee} shippingZone={zoneLabel} settings={settings} customer={customer} onClose={() => setCheckout(false)} onOrderPlaced={order => { placeOrder({ ...order, customerEmail: customer?.email || null }); setCheckout(false); if (customer) setCart([]); showToast("Order placed! 🩷"); }} />}
+      {checkout && <CheckoutModal cart={cart} total={cartTotal} shippingFee={shippingFee} shippingZone={zoneLabel} settings={settings} customer={customer} onClose={() => { setCheckout(false); }} onOrderPlaced={order => { placeOrder({ ...order, customerEmail: customer?.email || null }); showToast("Order placed! 🩷"); }} />}
 
       {/* ══ HOME ══ */}
       {section === "home" && <>
