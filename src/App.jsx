@@ -48,20 +48,16 @@ async function dbLoad(key) {
 }
 async function dbSave(key, val) {
   try {
-    // Try PATCH first (update existing row)
-    const patch = await fetch(`${SUPA_URL}/rest/v1/store_data?key=eq.${key}`, {
-      method: "PATCH",
-      headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify({ value: val })
+    await fetch(`${SUPA_URL}/rest/v1/store_data`, {
+      method: "POST",
+      headers: {
+        apikey: SUPA_KEY,
+        Authorization: `Bearer ${SUPA_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal"
+      },
+      body: JSON.stringify({ key, value: val })
     });
-    // If no row updated, insert new row
-    if (patch.headers.get("content-range") === "*/0") {
-      await fetch(`${SUPA_URL}/rest/v1/store_data`, {
-        method: "POST",
-        headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-        body: JSON.stringify({ key, value: val })
-      });
-    }
   } catch {}
 }
 
@@ -177,45 +173,40 @@ function CustomerAuthModal({ onSuccess, onClose }) {
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const submit = async () => {
+  const getCustomers = () => { try { return JSON.parse(sessionStorage.getItem("mn_customers") || "[]"); } catch { return []; } };
+  const saveCustomers = (v) => { try { sessionStorage.setItem("mn_customers", JSON.stringify(v)); } catch {} };
+
+  const submit = () => {
     setErr("");
     if (!form.email || !form.password) { setErr("Please fill in email and password."); return; }
     if (mode === "register" && !form.name) { setErr("Please enter your name."); return; }
-    setLoading(true);
-    const customers = (await dbLoad("customers")) || [];
+    const customers = getCustomers();
     const emailLower = form.email.trim().toLowerCase();
-
     if (mode === "register") {
-      if (customers.find(c => c.email === emailLower)) { setErr("An account with this email already exists."); setLoading(false); return; }
-      if (!form.phone) { setErr("Phone number is required (used for password reset)."); setLoading(false); return; }
+      if (customers.find(c => c.email === emailLower)) { setErr("An account with this email already exists."); return; }
+      if (!form.phone) { setErr("Phone number is required (used for password reset)."); return; }
       const newCustomer = { id: uid(), name: form.name, email: emailLower, phone: form.phone, passwordHash: simpleHash(form.password), cart: [], createdAt: new Date().toISOString() };
-      const next = [...customers, newCustomer];
-      await dbSave("customers", next);
-      setLoading(false);
+      saveCustomers([...customers, newCustomer]);
       onSuccess(newCustomer);
     } else {
       const found = customers.find(c => c.email === emailLower && c.passwordHash === simpleHash(form.password));
-      setLoading(false);
       if (!found) { setErr("Incorrect email or password."); return; }
       onSuccess(found);
     }
   };
 
-  const submitReset = async () => {
+  const submitReset = () => {
     setErr(""); setMsg("");
     if (!resetForm.email || !resetForm.phone || !resetForm.newPassword) { setErr("Please fill in all fields."); return; }
     if (resetForm.newPassword.length < 4) { setErr("New password must be at least 4 characters."); return; }
-    setLoading(true);
-    const customers = (await dbLoad("customers")) || [];
+    const customers = getCustomers();
     const emailLower = resetForm.email.trim().toLowerCase();
     const phoneClean = resetForm.phone.replace(/\s|-/g, "");
     const idx = customers.findIndex(c => c.email === emailLower && c.phone.replace(/\s|-/g, "") === phoneClean);
-    if (idx === -1) { setLoading(false); setErr("No account found matching that email and phone number."); return; }
+    if (idx === -1) { setErr("No account found matching that email and phone number."); return; }
     const next = customers.map((c, i) => i === idx ? { ...c, passwordHash: simpleHash(resetForm.newPassword) } : c);
-    await dbSave("customers", next);
-    setLoading(false);
-    setMsg("Password reset! You can now log in with your new password.");
-    setForm(f => ({ ...f, email: resetForm.email, password: "" }));
+    saveCustomers(next);
+    setMsg("Password reset! You can now log in.");
     setTimeout(() => { setMode("login"); setMsg(""); }, 1800);
   };
 
@@ -472,9 +463,11 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, custo
 // ─── Product Card (separate component to allow useState inside) ───────────────
 function ProductCard({ p, editMode, onUpdate, onDelete, onAddToCart, onLightbox }) {
   const [activeImg, setActiveImg] = useState(0);
+  const [showSizePicker, setShowSizePicker] = useState(false);
   const imgs = p.images || [];
   const fileRef = useRef();
   const addImg = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpdate(p.id, "images", [...imgs, ev.target.result]); r.readAsDataURL(f); e.target.value = ""; };
+  const allSoldOut = SIZE_LIST.every(sz => ((p.sizeStock && p.sizeStock[sz]) || 0) === 0);
   return (
     <div style={{ background: "#fff", borderRadius: 22, overflow: "hidden", boxShadow: "0 2px 20px #f0c0c018", border: "1px solid #fae8e8", position: "relative", transition: "transform .2s, box-shadow .2s" }}
       onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 10px 36px #f0c0c035"; }}
@@ -521,34 +514,60 @@ function ProductCard({ p, editMode, onUpdate, onDelete, onAddToCart, onLightbox 
       <div style={{ padding: "14px 18px 18px" }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: "#2a1818", marginBottom: 6 }}>{editMode ? <ET value={p.name} onChange={v => onUpdate(p.id, "name", v)} /> : p.name}</div>
         <div style={{ fontSize: 12, color: "#8a6a6a", marginBottom: 10, lineHeight: 1.65 }}>{editMode ? <ET value={p.desc} onChange={v => onUpdate(p.id, "desc", v)} multi /> : p.desc}</div>
-        {/* Per-size stock */}
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, color: "#b08080", marginBottom: 6 }}>Sizes & stock:</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {SIZE_LIST.map(sz => {
-              const stockVal = (p.sizeStock && p.sizeStock[sz] !== undefined) ? p.sizeStock[sz] : 0;
-              return (
-                <div key={sz} style={{ display: "flex", alignItems: "center", gap: 4, background: "#fdf6f6", borderRadius: 8, padding: "4px 8px", border: "1px solid #fae8e8" }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#5a3535" }}>{sz}</span>
-                  {editMode ? (
+        {/* Size selector */}
+        {editMode ? (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: "#b08080", marginBottom: 6 }}>Stock per size:</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {SIZE_LIST.map(sz => {
+                const stockVal = (p.sizeStock && p.sizeStock[sz] !== undefined) ? p.sizeStock[sz] : 0;
+                return (
+                  <div key={sz} style={{ display: "flex", alignItems: "center", gap: 4, background: "#fdf6f6", borderRadius: 8, padding: "4px 8px", border: "1px solid #fae8e8" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#5a3535" }}>{sz}</span>
                     <ET value={String(stockVal)} onChange={v => onUpdate(p.id, "sizeStock", { ...(p.sizeStock || {}), [sz]: Number(v) })} />
-                  ) : (
-                    <span style={{ fontSize: 11, color: stockVal === 0 ? "#ef4444" : stockVal <= 3 ? "#f59e0b" : "#10b981" }}>
-                      {stockVal === 0 ? "Sold out" : `${stockVal} left`}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div style={{ marginBottom: 14 }}>
+            {/* Size picker popup */}
+            {showSizePicker && (
+              <div style={{ background: "#fdf6f6", borderRadius: 14, padding: "12px 14px", border: "1px solid #fae0e0", marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: "#b08080", marginBottom: 8 }}>Select size:</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {SIZE_LIST.map(sz => {
+                    const stockVal = (p.sizeStock && p.sizeStock[sz] !== undefined) ? p.sizeStock[sz] : 0;
+                    const soldOut = stockVal === 0;
+                    return (
+                      <button key={sz} disabled={soldOut} onClick={() => { onAddToCart({ ...p, selectedSize: sz }); setShowSizePicker(false); }}
+                        style={{ padding: "8px 16px", borderRadius: 10, border: "1.5px solid", borderColor: soldOut ? "#eee" : "#b86060", background: soldOut ? "#f5f5f5" : "#fff", color: soldOut ? "#ccc" : "#b86060", fontWeight: 700, fontSize: 13, cursor: soldOut ? "not-allowed" : "pointer", fontFamily: "inherit", position: "relative" }}>
+                        {sz}
+                        {!soldOut && stockVal <= 3 && <span style={{ position: "absolute", top: -6, right: -6, background: "#f59e0b", color: "#fff", borderRadius: "50%", width: 16, height: 16, fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>{stockVal}</span>}
+                        {soldOut && <div style={{ fontSize: 9, color: "#ccc", marginTop: 2 }}>Sold out</div>}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button onClick={() => setShowSizePicker(false)} style={{ marginTop: 8, background: "none", border: "none", fontSize: 11, color: "#c09090", cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 20, fontWeight: 700, color: "#b86060" }}>
             <span style={{ fontSize: 12 }}>RM </span>
             {editMode ? <ET value={String(p.price)} onChange={v => onUpdate(p.id, "price", Number(v))} /> : p.price}
           </div>
-          <button onClick={() => onAddToCart(p)} disabled={SIZE_LIST.every(sz => ((p.sizeStock && p.sizeStock[sz]) || 0) === 0)}
-            style={{ background: SIZE_LIST.every(sz => ((p.sizeStock && p.sizeStock[sz]) || 0) === 0) ? "#ddd" : "#b86060", color: "#fff", border: "none", borderRadius: "50%", width: 36, height: 36, fontSize: 22, cursor: SIZE_LIST.every(sz => ((p.sizeStock && p.sizeStock[sz]) || 0) === 0) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+          {!editMode && (
+            allSoldOut
+              ? <span style={{ fontSize: 12, fontWeight: 700, color: "#ef4444", background: "#fff0f0", padding: "6px 14px", borderRadius: 20 }}>Sold Out</span>
+              : <button onClick={() => setShowSizePicker(s => !s)}
+                  style={{ background: "#b86060", color: "#fff", border: "none", borderRadius: 20, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+                  Add to Cart +
+                </button>
+          )}
         </div>
       </div>
     </div>
@@ -579,7 +598,6 @@ export default function MayNails() {
   const [shippingZone, setShippingZone] = useState("west"); // "west" | "east" | "sameday"
   const [toast, setToast] = useState("");
   const [lightbox, setLightbox] = useState(null);
-  const [allCustomers, setAllCustomers] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [trackId, setTrackId] = useState("");
   const [trackPhone, setTrackPhone] = useState("");
@@ -588,44 +606,23 @@ export default function MayNails() {
 
   useEffect(() => {
     (async () => {
-      const [p, g, s, o] = await Promise.all([dbLoad("products"), dbLoad("gallery"), dbLoad("settings"), dbLoad("orders")]);
+      const [p, g, s] = await Promise.all([dbLoad("products"), dbLoad("gallery"), dbLoad("settings")]);
       if (p) setProducts(p.map(prod => ({ ...prod, images: prod.images || [], sizeStock: prod.sizeStock || makeStock(prod.stock ?? 10) })));
       if (g) setGallery(g);
       if (s) setSettings(prev => ({ ...prev, ...s, shipping: { ...prev.shipping, ...(s.shipping || {}), west: { ...prev.shipping.west, ...(s.shipping?.west || {}) }, east: { ...prev.shipping.east, ...(s.shipping?.east || {}) }, express: { ...prev.shipping.express, ...(s.shipping?.express || {}) } }, guide: { ...prev.guide, ...(s.guide || {}) }, contact: { ...prev.contact, ...(s.contact || {}) }, maintenance: { ...prev.maintenance, ...(s.maintenance || {}) } }));
-      if (o) setOrders(o);
+
       setLoaded(true);
 
-      // Restore customer session (kept only for this browser tab/session)
-      try {
-        const savedEmail = sessionStorage.getItem("mn_customer_email");
-        if (savedEmail) {
-          const customers = (await dbLoad("customers")) || [];
-          const found = customers.find(c => c.email === savedEmail);
-          if (found) { setCustomer(found); setCart(found.cart || []); }
-        }
-      } catch {}
+
     })();
   }, []);
 
-  // Persist cart to customer record whenever it changes (if logged in)
-  useEffect(() => {
-    if (!customer) return;
-    (async () => {
-      const customers = (await dbLoad("customers")) || [];
-      const next = customers.map(c => c.id === customer.id ? { ...c, cart } : c);
-      await dbSave("customers", next);
-    })();
-  }, [cart, customer?.id]);
+
 
   const saveProducts = v => { setProducts(v); dbSave("products", v); };
   const saveGallery = v => { setGallery(v); dbSave("gallery", v); };
   const saveSettings = v => { setSettings(v); dbSave("settings", v); };
-  const saveOrders = v => {
-    setOrders(v);
-    // Strip proof images before saving to Supabase (too large for DB)
-    const stripped = v.map(o => ({ ...o, proof: o.proof ? "uploaded" : null }));
-    dbSave("orders", stripped);
-  };
+  const saveOrders = v => { setOrders(v); };
 
   const showToast = msg => { setToast(msg); setTimeout(() => setToast(""), 2400); };
 
@@ -638,7 +635,20 @@ export default function MayNails() {
   };
 
   // Cart
-  const addToCart = p => { setCart(prev => { const ex = prev.find(i => i.id === p.id); return ex ? prev.map(i => i.id === p.id ? { ...i, qty: i.qty + 1 } : i) : [...prev, { ...p, qty: 1 }]; }); showToast(`Added: ${p.name} 🛒`); };
+  const addToCart = p => {
+    const cartKey = `${p.id}-${p.selectedSize || ""}`;
+    setCart(prev => {
+      const ex = prev.find(i => i.cartKey === cartKey);
+      if (ex) return prev.map(i => i.cartKey === cartKey ? { ...i, qty: i.qty + 1 } : i);
+      return [...prev, { ...p, cartKey, qty: 1 }];
+    });
+    // Deduct stock
+    if (p.selectedSize) {
+      const newStock = { ...(p.sizeStock || {}), [p.selectedSize]: Math.max(0, ((p.sizeStock && p.sizeStock[p.selectedSize]) || 0) - 1) };
+      updProduct(p.id, "sizeStock", newStock);
+    }
+    showToast(`Added: ${p.name} ${p.selectedSize ? `(${p.selectedSize})` : ""} 🛒`);
+  };
   const removeFromCart = id => setCart(p => p.filter(i => i.id !== id));
   const adjustQty = (id, d) => setCart(p => p.map(i => i.id === id ? { ...i, qty: Math.max(1, i.qty + d) } : i));
   const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
@@ -667,29 +677,9 @@ export default function MayNails() {
 
   const statusColor = { "Pending Payment": "#f59e0b", "Payment Verified": "#10b981", "Shipped": "#6366f1", "Completed": "#b86060", "Cancelled": "#ef4444" };
 
-  useEffect(() => {
-    if (section === "customers" && isAdmin && editMode) {
-      (async () => { const c = (await dbLoad("customers")) || []; setAllCustomers(c); })();
-    }
-  }, [section, isAdmin, editMode]);
 
-  // Auto-refresh orders every 30s when admin is logged in
-  useEffect(() => {
-    if (!isAdmin) return;
-    const interval = setInterval(async () => {
-      const o = await dbLoad("orders");
-      if (o) {
-        setOrders(prev => {
-          const newOrders = o.filter(no => !prev.find(po => po.id === no.id));
-          if (newOrders.length > 0) {
-            showToast(`🔔 ${newOrders.length} new order${newOrders.length > 1 ? "s" : ""}!`);
-          }
-          return o;
-        });
-      }
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [isAdmin]);
+
+
 
   const navItems = [
     { key: "home", label: "Home" }, { key: "shop", label: "Shop" },
@@ -697,7 +687,7 @@ export default function MayNails() {
     { key: "faq", label: "FAQ" }, { key: "track", label: "Track Order" },
     ...(customer ? [{ key: "myorders", label: "My Orders" }] : []),
     { key: "contact", label: "Contact" },
-    ...(isAdmin && editMode ? [{ key: "orders", label: "📋 Orders" }, { key: "customers", label: "👥 Customers" }] : []),
+    ...(isAdmin && editMode ? [{ key: "orders", label: "📋 Orders" }] : []),
   ];
 
   const P = ({ children }) => <span style={{ fontFamily: "'Georgia','Times New Roman',serif" }}>{children}</span>;
@@ -798,7 +788,7 @@ export default function MayNails() {
             </button>
           )}
           {customer ? (
-            <button onClick={() => { if (confirm("Log out?")) { setCustomer(null); setCart([]); setSection("home"); try { sessionStorage.removeItem("mn_customer_email"); } catch {} } }}
+            <button onClick={() => { if (confirm("Log out?")) { setCustomer(null); setCart([]); setSection("home"); } }}
               style={{ background: "transparent", border: "1.5px solid #b86060", color: "#b86060", borderRadius: 20, padding: "5px 13px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
               👤 {customer.name.split(" ")[0]}
             </button>
@@ -820,8 +810,6 @@ export default function MayNails() {
       {showCustomerAuth && <CustomerAuthModal
         onSuccess={(cust) => {
           setCustomer(cust);
-          if (cust.cart && cust.cart.length > 0) setCart(cust.cart);
-          try { sessionStorage.setItem("mn_customer_email", cust.email); } catch {}
           setShowCustomerAuth(false);
           showToast(`Welcome, ${cust.name.split(" ")[0]}! 🩷`);
         }}
@@ -844,7 +832,7 @@ export default function MayNails() {
                     {item.images?.[0] ? <img src={item.images[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "💅"}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#2a1818", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#2a1818", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}{item.selectedSize ? ` (${item.selectedSize})` : ""}</div>
                     <div style={{ fontSize: 12, color: "#b86060", fontWeight: 700 }}>{fmt(item.price)}</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -1177,7 +1165,7 @@ export default function MayNails() {
       {section === "myorders" && customer && (
         <div className="section">
           <h2 className="sec-title">My <span>Orders</span></h2>
-          <p className="sec-sub">Logged in as {customer.name} · <button onClick={() => { if (confirm("Log out?")) { setCustomer(null); setCart([]); setSection("home"); try { sessionStorage.removeItem("mn_customer_email"); } catch {} } }} style={{ background: "none", border: "none", color: "#b86060", fontSize: 13, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>Log out</button></p>
+          <p className="sec-sub">Logged in as {customer.name} · <button onClick={() => { if (confirm("Log out?")) { setCustomer(null); setCart([]); setSection("home"); } }} style={{ background: "none", border: "none", color: "#b86060", fontSize: 13, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>Log out</button></p>
           {(() => {
             const myOrders = orders.filter(o => o.customerEmail === customer.email);
             if (myOrders.length === 0) return (
@@ -1212,30 +1200,7 @@ export default function MayNails() {
         </div>
       )}
 
-      {/* ══ CUSTOMERS (admin) ══ */}
-      {section === "customers" && isAdmin && editMode && (
-        <div className="section">
-          <div style={{ marginBottom: 24 }}>
-            <h2 className="sec-title" style={{ textAlign: "left", marginBottom: 4 }}>👥 Customers</h2>
-            <p style={{ fontSize: 13, color: "#a07070" }}>{allCustomers.length} registered customer{allCustomers.length !== 1 ? "s" : ""}</p>
-          </div>
-          {allCustomers.length === 0
-            ? <div style={{ textAlign: "center", padding: "60px 20px", color: "#c09090", fontSize: 14, lineHeight: 2 }}>No registered customers yet.</div>
-            : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {allCustomers.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(c => (
-                  <div key={c.id} style={{ background: "#fff", borderRadius: 16, padding: "16px 20px", border: "1px solid #fae0e0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: "#2a1818" }}>{c.name}</div>
-                      <div style={{ fontSize: 12, color: "#8a6060" }}>{c.email}{c.phone ? ` · ${c.phone}` : ""}</div>
-                    </div>
-                    <div style={{ fontSize: 11, color: "#c09090" }}>Joined {new Date(c.createdAt).toLocaleDateString("en-MY", { dateStyle: "medium" })}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-        </div>
-      )}
+
 
       <div style={{ height: 1, background: "linear-gradient(to right,transparent,#f0d0d0,transparent)", maxWidth: 1100, margin: "0 auto" }} />
       <footer style={{ background: "#2a1818", color: "#c09090", textAlign: "center", padding: "30px 20px", fontSize: 13, lineHeight: 2.2 }}>
