@@ -8,6 +8,24 @@ const ADMIN_PASSWORD = "maynails2025";
 // Replace SHEET_ID with your Google Sheet ID after setup
 const SHEET_URL = "https://script.google.com/macros/s/AKfycbwM8TveD4yFk0V2YrG1FwwaI5B8aIlMzg9_DiX0az0X2t_ACzwXALq9WRn6Ap7_4jBE1w/exec";
 const SHEET_NAME = "Orders";
+async function appendToCustomerSheet(customer) {
+  if (SHEET_URL === "YOUR_SHEET_URL_HERE") return;
+  try {
+    const row = [
+      customer.name,
+      customer.email,
+      customer.phone || "",
+      new Date(customer.createdAt).toLocaleString("en-MY"),
+    ];
+    await fetch(SHEET_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ row, sheet: "Customer" }),
+      mode: "no-cors",
+    });
+  } catch {}
+}
+
 async function appendToSheet(order) {
   
   try {
@@ -18,7 +36,7 @@ async function appendToSheet(order) {
       order.customer.phone,
       order.customer.address,
       order.customer.size,
-      order.items.map(i => `${i.name} x${i.qty}`).join(", "),
+      order.items.map(i => `${i.name}${i.selectedSize ? ` (${i.selectedSize})` : ""} x${i.qty}`).join(", "),
       `RM ${order.subtotal.toFixed(2)}`,
       `RM ${order.shipping.toFixed(2)}`,
       `RM ${order.grand.toFixed(2)}`,
@@ -187,6 +205,7 @@ function CustomerAuthModal({ onSuccess, onClose }) {
       if (!form.phone) { setErr("Phone number is required (used for password reset)."); return; }
       const newCustomer = { id: uid(), name: form.name, email: emailLower, phone: form.phone, passwordHash: simpleHash(form.password), cart: [], createdAt: new Date().toISOString() };
       saveCustomers([...customers, newCustomer]);
+      appendToCustomerSheet(newCustomer);
       onSuccess(newCustomer);
     } else {
       const found = customers.find(c => c.email === emailLower && c.passwordHash === simpleHash(form.password));
@@ -322,7 +341,7 @@ function AdminLogin({ onSuccess, onClose }) {
 function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, customer, onClose, onOrderPlaced }) {
   const [step, setStep] = useState(1);
   const [payMethod, setPayMethod] = useState("bank");
-  const [form, setForm] = useState({ name: customer?.name || "", phone: customer?.phone || "", address: "", state: "", size: "", note: "", shippingMethod: "west" });
+  const [form, setForm] = useState({ name: customer?.name || "", phone: customer?.phone || "", address: "", state: "", note: "", shippingMethod: "west" });
   const [proof, setProof] = useState(null);
   const [placedOrderId, setPlacedOrderId] = useState("");
   const proofRef = useRef();
@@ -398,12 +417,7 @@ function CheckoutModal({ cart, total, shippingFee, shippingZone, settings, custo
                   </div>
                 </div>
               )}
-              <div style={{ display: "flex", gap: 10 }}>
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
-                  <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>Nail size</label>
-                  <input style={{ border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff" }} value={form.size} onChange={e => setForm(f => ({ ...f, size: e.target.value }))} placeholder="e.g. XS/S/M" />
-                </div>
-              </div>
+
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <label style={{ fontSize: 11, color: "#b08080", textTransform: "uppercase", letterSpacing: ".5px" }}>Special requests (optional)</label>
                 <textarea style={{ border: "1.5px solid #f0d0d0", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fff", resize: "vertical", minHeight: 60 }} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Any special requests?" />
